@@ -1,11 +1,15 @@
-# 微信原生组件
+# GY CrossKit Wechat Native
 
-接线、边界和验证结果请参阅根 README.md；SDK 为 @tencent/wechat_open_sdk 1.0.23。
+HarmonyOS 微信授权、图片/网页分享与商家转账确认页入口，依赖 `@tencent/wechat_open_sdk` 1.0.23，HAR 要求 API 22。
 
-图片输入上限 25 MiB（纯 Base64）；标题/描述沿用宿主 256/512 字符并按 UTF-8 512/1024 字节截断。`shareImage(id, base64, scene, recipientId?, senderOpenId?)` 保留普通分享调用；SDK 1.0.23 缺少指定联系人 API，非空可信目标返回 `unsupported`，不降级普通好友。senderOpenId 仅为跨端契约透传，本端不使用；cancel/dispose/trustedStore 保持原契约。
-
-可信恢复使用宿主同步原子 `WechatRequestStore`，发送前保存、消费/取消清除。初始化前的 Want 用 `WechatClient.forwardWant` 缓存，初始化后由官方 SDK 校验。迟监听缓存归一结果；Kuikly `listen` 的 `restoredRequestId` 仅认领已有可信记录，不从页面恢复 transaction/state。详细接线与 iOS 无 transaction 边界见根 README。
+当前 HAR **0.1.1** 已正式上架 OHPM，同时提供 [GitHub Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.2) 下载及 SHA-256。旧 **0.1.0** 不包含新增分享参数。
 
 ```sh
-ohpm install @gycrosskit/wechat-native@0.1.0
+ohpm install @gycrosskit/wechat-native@0.1.1
 ```
+
+在 EntryAbility 配置唯一 `WechatClient` 并转交 Want；初始化前可调用 `forwardWant`。恢复使用宿主同步原子可信 `WechatRequestStore`，不能从页面或回跳恢复 transaction/state；监听与页面结束需成对取消、移除和 dispose。
+
+图片使用纯 Base64 PNG/JPEG，最大 25 MiB；指定联系人返回 `unsupported`，不降级普通好友。`requested` 不表示业务成功，转账页面回执不表示到账。
+
+完整 API、接线和许可见[仓库 README](https://github.com/gycrosskit/wechat/blob/0.1.2/README.md)。
