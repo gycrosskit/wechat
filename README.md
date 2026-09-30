@@ -50,9 +50,9 @@ Android 构造参数 `store: WechatRequestStore?`、OHOS `configure(appId, conte
 本地验证坐标（尚未发布）：
 
 ```kotlin
-implementation("com.github.gycrosskit.wechat:wechat-core:0.1.0")
+implementation("com.github.gycrosskit.wechat:wechat-core:0.1.1")
 // OHOS Kuikly 消费者额外添加：
-implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.0")
+implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.1")
 ```
 
 宿主在隐私授权后于主线程构造并持有唯一 `AndroidWechatClient(application, appId, listener, trustedStore)`。授权调用 `authorize(requestId)`；网页分享调用 `shareWebPage(requestId, url, title, description, thumbnailBytes, WechatScene.SESSION)`；转账参数全部来自服务端并原样传入 `openMerchantTransfer`。

@@ -1,1 +1,16 @@
-{"name":"@gycrosskit/wechat-native","version":"0.1.0","description":"微信 OAuth、分享和商家转账确认页 SDK 入口","main":"Index.ets","author":"gycrosskit","license":"Apache-2.0","dependencies":{"@kuikly-open/render":"2.28.0","@tencent/wechat_open_sdk":"1.0.23"}}
+{
+  "name": "@gycrosskit/wechat-native",
+  "version": "0.1.0",
+  "description": "微信 OAuth、分享和商家转账确认页 SDK 入口",
+  "main": "Index.ets",
+  "author": {
+    "name": "gycrosskit",
+    "url": "https://github.com/gycrosskit/wechat"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@kuikly-open/render": "2.28.0",
+    "@tencent/wechat_open_sdk": "1.0.23"
+  },
+  "repository": "https://github.com/gycrosskit/wechat"
+}

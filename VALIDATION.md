@@ -28,3 +28,9 @@ HAR 有外部 Kuikly strict-typing、packing deprecation、设备系统能力及
 首发 staging：`build/release/wechat-maven.tar.gz`（由 `verification/maven/com` 打包），`build/release/WechatNative.har` 及各自 SHA-256 文件。源码版本、Podspec 和 HAR 均为 `0.1.0`；标签归档/JitPack 校验文件和远程消费由正式发布步骤完成，不能把本地 staging 写成远程已发布。
 
 未验证：真实客户端安装/版本分支、实际 OAuth 返回、Android 签名/固定 Activity、iOS URL Scheme/Universal Link、OHOS 签名回跳、好友/朋友圈界面、转账确认页展示、远程 Maven/Swift/ohpm 下载。没有真实登录、支付、转账或分享发送。mock 验证不能代替 SDK 验签真机验收；转账 pageResult success 不代表资金到账。
+
+## 2026-09-30 远程发布修正
+
+Maven 候选改为 0.1.1，组件逻辑不变。JitPack Linux 实际错误为将 macOS AppleDouble `._*.module` 读取为 JSON。`release-pack.py` 用 Python tarfile 打包当前版本，排除 AppleDouble；归档逐项 JSON 与文件引用校验通过。旧 Release/标签不覆盖。重新发布全部声明平台产物成功，远程消费继续验证。
+
+HAR 的 OHPM 版本保持原版本；Registry 要求的作者 URL、仓库 URL 与安装命令已补齐（如适用）。提交已被 Registry 接受，审核中；尚不能称为上架或远程安装成功。
