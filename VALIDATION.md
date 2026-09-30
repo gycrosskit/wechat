@@ -40,3 +40,7 @@ HAR 的 OHPM 版本保持原版本；Registry 要求的作者 URL、仓库 URL �
 Maven `0.1.1` 已发布：[GitHub Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.1)，JitPack 状态 `ok`，独立消费的Android、iOS Simulator Framework 链接、OHOS 编译通过。 HAR `0.1.0` 已提交 OHPM 审核，尚未上架；GitHub Release HAR 已远程下载、SHA-256 校验、安装到独立工程并 assembleHar 成功。OHPM 不支持此 HAR URL 直接依赖，验收使用下载缓存的 file 依赖，不计为 Registry 安装验收。 Swift Package 从远程 Git 标签 `0.1.0` 拉取，提供官方 WechatOpenSDK-XCFramework 2.0.7 的 Simulator slice 后 xcodebuild 成功；未上传 CocoaPods Specs。
 
 本轮默认远程仓库解析，无源码 include/project 替换或 mavenLocal。Gradle 消费使用 `--rerun-tasks` 强制编译；permission、diagnostics 同时刷新依赖，其余库使用新版本首次远程解析，`--info` 留有 JitPack 下载证据。行为测试、SDK mock 与产物消费不代表真机系统页面或真实授权/支付验收。
+
+## 2026-09-30 OHPM 上架后验收
+
+`@gycrosskit/wechat-native@0.1.0` 已通过审核并公开列出。新建忽略目录 build/registry-har-consumer，仅以 Registry 精确版本依赖，无 file/源码路径依赖；`ohpm install --all`、`assembleHar --no-daemon` 均通过。锁文件 resolved 指向 ohpm.openharmony.cn，已核验。GitHub Release 下载缓存消费仍是另一项验收，不混记。日志 `/tmp/issues-six-wechat-registry-har.log`。未执行真机系统页面或 SDK 请求。

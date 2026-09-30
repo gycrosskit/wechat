@@ -2,7 +2,7 @@
 
 微信 SDK 注册与回跳入口，提供 OAuth 授权、图片/网页好友或朋友圈分享、商家转账确认页拉起。仅返回 SDK 请求受理、授权 Code 与页面回执；`pageResult=success` 表示确认页展示成功，资金状态由宿主服务端核实。
 
-Maven `0.1.1` 已发布：[GitHub Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.1)，JitPack 状态 `ok`，独立消费的Android、iOS Simulator Framework 链接、OHOS 编译通过。 HAR `0.1.0` 已提交 OHPM 审核，尚未上架；GitHub Release HAR 已远程下载、SHA-256 校验、安装到独立工程并 assembleHar 成功。OHPM 不支持此 HAR URL 直接依赖，验收使用下载缓存的 file 依赖，不计为 Registry 安装验收。 Swift Package 从远程 Git 标签 `0.1.0` 拉取，提供官方 WechatOpenSDK-XCFramework 2.0.7 的 Simulator slice 后 xcodebuild 成功；未上传 CocoaPods Specs。
+Maven `0.1.1` 已发布：[GitHub Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.1)，JitPack 状态 `ok`，独立消费的Android、iOS Simulator Framework 链接、OHOS 编译通过。 HAR `0.1.0` 已通过 OHPM 审核并上架，正式 Registry 精确版本安装和独立 assembleHar 已通过；GitHub Release HAR 已远程下载、SHA-256 校验、安装到独立工程并 assembleHar 成功。OHPM 不支持此 HAR URL 直接依赖，验收使用下载缓存的 file 依赖，另已使用正式 Registry 版本重新验收安装与编译。 Swift Package 从远程 Git 标签 `0.1.0` 拉取，提供官方 WechatOpenSDK-XCFramework 2.0.7 的 Simulator slice 后 xcodebuild 成功；未上传 CocoaPods Specs。
 
 ## 平台与依赖
 
@@ -88,7 +88,7 @@ KMP 宿主实现导出的 `IosWechatBridge`，委托给原生 `WechatClient`，�
 
 ## HarmonyOS 与 Kuikly
 
-HAR 包名 `@gycrosskit/wechat-native@0.1.0`，已提交 OHPM 审核；上架前可下载不可变 GitHub Release 的 HAR 并校验 SHA-256，正式 OHPM 坐标待上架安装验收。
+HAR 包名 `@gycrosskit/wechat-native@0.1.0`，已上架，精确版本 Registry 安装与独立编译已通过；也可下载不可变 GitHub Release HAR 并校验 SHA-256。
 
 ```typescript
 import { WechatClient } from '@gycrosskit/wechat-native';
@@ -140,4 +140,4 @@ Swift Package 构建需向 `xcodebuild` 提供对应官方 XCFramework slice 的
 
 ## 发布准备
 
-`jitpack-install.sh`、`jitpack-metadata.py` 使用 GY CrossKit 共用的不可变 Release Maven 归档模板；`jitpack.yml` 调用 `bash jitpack-install.sh wechat`。`release-checksums.txt` 已记录不可变 Maven 标签归档的 SHA-256；`release-pack.py` 排除 macOS AppleDouble，防止 Linux 把扩展属性文件当成 metadata。远程 Maven、Swift Package 与 GitHub Release HAR 消费通过，OHPM 审核后仍需 Registry 安装验收。
+`jitpack-install.sh`、`jitpack-metadata.py` 使用 GY CrossKit 共用的不可变 Release Maven 归档模板；`jitpack.yml` 调用 `bash jitpack-install.sh wechat`。`release-checksums.txt` 已记录不可变 Maven 标签归档的 SHA-256；`release-pack.py` 排除 macOS AppleDouble，防止 Linux 把扩展属性文件当成 metadata。远程 Maven、Swift Package 与 GitHub Release HAR 消费通过，OHPM Registry 安装与独立编译已通过。
