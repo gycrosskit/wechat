@@ -70,3 +70,11 @@ iOS requestId保持nil，新增candidateRequestID与singlePending证据；一笔
 真实SDK JVM检查命令为 `java -Xverify:none -ea --class-path "build/sdk-inspect/classes.jar:<android.jar>" tests/AndroidSdkCheck.java`；classes.jar从已缓存6.8.34 AAR解包。JVM默认验证因厂商旧stackmap在Log.e报VerifyError，此独立检查明确使用-Xverify:none；SDK checkArgs本身未替换，仅ILog静默。正常Android/Kotlin构建不修改或绕过校验策略。
 
 仍未验证：微信真机版本/指定联系人UI、实际分享返回与业务任务上报、跨进程iOS迟回执、宿主可信senderOpenId来源、取消隔离对宿主页面的影响、本轮新远程Maven/Swift/OHPM版本。SDK/mock/typecheck不能代替这些验收。
+
+## 0.1.2 远程发布验收
+
+修复 PR #6 已合并，Git 标签 0.1.2 指向 `9597315c024e510c73d632c1bb01ca3728ffc084`；JitPack 最终状态 `ok` 且 commit 匹配。独立 Gradle consumer 使用默认 JitPack 仓库和 `--rerun-tasks --info`，Android/OHOS 编译、iOS Simulator Framework 链接通过，日志包含远程 AAR/KLIB/metadata 下载。远程 Swift Package exact 0.1.2 的 Package.resolved 同版本同提交，提供厂商 SDK slice 后 xcodebuild 成功。
+
+GitHub Release HAR 下载后 SHA-256 匹配，独立消费工程含新增 shareImage 参数的公开 API 编译，assembleHar 通过；file 依赖只指向校验后的远程下载缓存。`ohpm prepublish` 成功，`ohpm publish` 已接受 @gycrosskit/wechat-native@0.1.1 并进入审核；此时查询仍只有0.1.0，不能写成 Registry 新版消费完成。
+
+日志：`/tmp/contracts-wechat-consumer-remote.log`、`/tmp/contracts-wechat-swift-remote.log`、`/tmp/contracts-wechat-har-remote.log`。真机及宿主分享业务验收未执行，#5保留跟踪。
