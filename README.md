@@ -2,7 +2,7 @@
 
 微信 SDK 注册与回跳入口，提供 OAuth 授权、图片/网页好友或朋友圈分享、商家转账确认页拉起。仅返回 SDK 请求受理、授权 Code 与页面回执；`pageResult=success` 表示确认页展示成功，资金状态由宿主服务端核实。
 
-Maven `0.1.1` 已发布：[GitHub Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.1)，JitPack 状态 `ok`，独立消费的Android、iOS Simulator Framework 链接、OHOS 编译通过。 HAR `0.1.0` 已通过 OHPM 审核并上架，正式 Registry 精确版本安装和独立 assembleHar 已通过；GitHub Release HAR 已远程下载、SHA-256 校验、安装到独立工程并 assembleHar 成功。OHPM 不支持此 HAR URL 直接依赖，验收使用下载缓存的 file 依赖，另已使用正式 Registry 版本重新验收安装与编译。 Swift Package 从远程 Git 标签 `0.1.0` 拉取，提供官方 WechatOpenSDK-XCFramework 2.0.7 的 Simulator slice 后 xcodebuild 成功；未上传 CocoaPods Specs。
+Maven / Swift Git 标签 `0.1.2` 已发布：[GitHub Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.2)。JitPack `ok`，独立远程 Android/OHOS 编译、iOS Simulator Framework 链接及远程 Swift Package 构建通过，未使用本地组件源码替换。Swift 使用宿主提供的官方 WechatOpenSDK-XCFramework 2.0.7 slice；未上传 CocoaPods Specs。HAR `0.1.1` 已通过不可变 GitHub Release 下载、SHA-256 校验与独立 assembleHar，OHPM 尚在审核；旧 HAR `0.1.0` 已上架，不能用来消费新增指定联系人字段。
 
 ## 平台与依赖
 
@@ -55,9 +55,9 @@ Android 构造参数 `store: WechatRequestStore?`、OHOS `configure(appId, conte
 远程 Maven 坐标（JitPack）：
 
 ```kotlin
-implementation("com.github.gycrosskit.wechat:wechat-core:0.1.1")
+implementation("com.github.gycrosskit.wechat:wechat-core:0.1.2")
 // OHOS Kuikly 消费者额外添加：
-implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.1")
+implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.2")
 ```
 
 宿主在隐私授权后于主线程构造并持有唯一 `AndroidWechatClient(application, appId, listener, trustedStore)`。授权调用 `authorize(requestId)`；网页分享调用 `shareWebPage(requestId, url, title, description, thumbnailBytes, WechatScene.SESSION)`；转账参数全部来自服务端并原样传入 `openMerchantTransfer`。
@@ -100,7 +100,7 @@ KMP 宿主实现导出的 `IosWechatBridge`，委托给原生 `WechatClient`，�
 
 ## HarmonyOS 与 Kuikly
 
-HAR 包名 `@gycrosskit/wechat-native@0.1.0`，已上架，精确版本 Registry 安装与独立编译已通过；也可下载不可变 GitHub Release HAR 并校验 SHA-256。
+HAR 包名 `@gycrosskit/wechat-native@0.1.1`，OHPM 审核中；GitHub Release HAR 下载与独立编译已通过。正式 Registry 消费须等上架后验证。
 
 ```typescript
 import { WechatClient } from '@gycrosskit/wechat-native';
