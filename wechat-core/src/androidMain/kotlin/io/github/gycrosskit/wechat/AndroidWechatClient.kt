@@ -21,10 +21,12 @@ import java.util.concurrent.Executors
 import org.json.JSONObject
 
 /** 宿主 Application 持有唯一实例，固定 wxapi Activity 把 Intent 交给 handleIntent。 */
-class AndroidWechatClient(context: Context, appId: String, private val listener: WechatListener) : WechatClient {
+class AndroidWechatClient(context: Context, appId: String, listener: WechatListener? = null, store: WechatRequestStore? = null) : WechatClient {
     private val main = Handler(Looper.getMainLooper())
     private val images = Executors.newSingleThreadExecutor()
-    private val session = WechatSession()
+    private val session = WechatSession(store)
+    private var listener = listener
+    private val receipts = mutableListOf<WechatReceipt>()
     private val api = WXAPIFactory.createWXAPI(context.applicationContext, appId, true)
     private val handler = object : IWXAPIEventHandler {
         override fun onReq(req: BaseReq) = Unit
@@ -33,6 +35,13 @@ class AndroidWechatClient(context: Context, appId: String, private val listener:
     private val registered: Boolean
     init { require(appId.isNotBlank()); registered = api.registerApp(appId) }
 
+    fun attach(listener: WechatListener) {
+        checkMain()
+        this.listener = listener
+        val buffered = receipts.toList(); receipts.clear()
+        buffered.forEach(listener::onReceipt)
+    }
+    fun detach() { checkMain(); listener = null }
     fun handleIntent(intent: Intent): Boolean {
         checkMain()
         return runCatching { api.handleIntent(intent, handler) }.getOrDefault(false)
@@ -84,7 +93,8 @@ class AndroidWechatClient(context: Context, appId: String, private val listener:
     }
     override fun cancel(requestId: String) {
         checkMain()
-        if (session.cancel(requestId)) listener.onSubmitted(requestId, WechatStatus.CANCELLED)
+        receipts.removeAll { it.requestId == requestId }
+        if (session.cancel(requestId)) listener?.onSubmitted(requestId, WechatStatus.CANCELLED)
     }
     private fun handleResponse(resp: BaseResp) {
         checkMain()
@@ -97,14 +107,22 @@ class AndroidWechatClient(context: Context, appId: String, private val listener:
         val pending = session.consume(resp.transaction, kind, (resp as? SendAuth.Resp)?.state) ?: return
         val code = (resp as? SendAuth.Resp)?.code?.takeIf { resp.errCode == 0 && it.isNotBlank() }
         val page = (resp as? WXOpenBusinessView.Resp)?.extMsg?.let { runCatching { JSONObject(it).optString("result").takeIf(String::isNotBlank) }.getOrNull() }
-        listener.onReceipt(WechatReceipt(pending.id, kind, if (kind == WechatKind.AUTHORIZATION && resp.errCode == 0 && code == null) -1 else resp.errCode, code, page))
+        deliver(WechatReceipt(pending.requestId, kind, if (kind == WechatKind.AUTHORIZATION && resp.errCode == 0 && code == null) -1 else resp.errCode, code, page))
+    }
+    private fun deliver(receipt: WechatReceipt) {
+        val current = listener
+        if (current != null) current.onReceipt(receipt) else {
+            // ponytail: 最多缓存 64 笔归一回执；需要跨进程交付时由宿主持久保存业务结果。
+            if (receipts.size == 64) receipts.removeAt(0)
+            receipts.add(receipt)
+        }
     }
     private var transaction: String = ""
     private fun begin(id: String, kind: WechatKind, state: String? = null): Boolean {
         checkMain()
         val token = UUID.randomUUID().toString()
         val rejected = session.begin(id, token, kind, state)
-        if (rejected != null) { listener.onSubmitted(id, rejected); return false }
+        if (rejected != null) { listener?.onSubmitted(id, rejected); return false }
         transaction = token
         if (!registered) { fail(id, WechatStatus.FAILED); return false }
         if (!api.isWXAppInstalled) { fail(id, WechatStatus.NOT_INSTALLED); return false }
@@ -118,9 +136,9 @@ class AndroidWechatClient(context: Context, appId: String, private val listener:
         request.transaction = transaction
         val accepted = runCatching { request.checkArgs() && api.sendReq(request) }.getOrDefault(false)
         if (!accepted) session.cancel(id)
-        listener.onSubmitted(id, if (accepted) WechatStatus.REQUESTED else WechatStatus.FAILED)
+        listener?.onSubmitted(id, if (accepted) WechatStatus.REQUESTED else WechatStatus.FAILED)
     }
-    private fun fail(id: String, status: WechatStatus) { session.cancel(id); listener.onSubmitted(id, status) }
+    private fun fail(id: String, status: WechatStatus) { session.cancel(id); listener?.onSubmitted(id, status) }
     private fun checkMain() { check(Looper.myLooper() == Looper.getMainLooper()) { "WeChat must run on main thread" } }
     private fun thumbnail(data: ByteArray): ByteArray? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

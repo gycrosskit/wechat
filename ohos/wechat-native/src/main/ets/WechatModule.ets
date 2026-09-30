@@ -1,17 +1,22 @@
 import { KRAny, KuiklyRenderBaseModule, KuiklyRenderCallback } from '@kuikly-open/render';
 import { WechatClient, WechatReceipt, WechatStatus } from './WechatClient';
-interface Args { requestId: string; data: string; scene: string; url: string; title: string; description: string; thumbnail: string; merchantId: string; appId: string; packageValue: string; }
+interface Args { requestId: string; data: string; scene: string; url: string; title: string; description: string; thumbnail: string; merchantId: string; appId: string; packageValue: string; restoredRequestId: string; }
 export class WechatModule extends KuiklyRenderBaseModule {
   static readonly MODULE_NAME: string = 'GycWechat';
   private listener: KuiklyRenderCallback | null = null;
   private destroyed: boolean = false;
   private ids: Set<string> = new Set();
-  private response = (receipt: WechatReceipt): void => { if (this.ids.delete(receipt.requestId)) { this.listener?.(receipt); } };
+  private response = (receipt: WechatReceipt): void => { if (!this.destroyed && this.ids.delete(receipt.requestId)) { this.listener?.(receipt); } };
   syncMode(): boolean { return false; }
   call(method: string, params: KRAny, callback: KuiklyRenderCallback | null): KRAny {
     const client = WechatClient.current();
     if (this.destroyed || !client) { callback?.({ status: 'unsupported' }); return null; }
-    if (method === 'listen') { this.listener = callback; client.addListener(this.response); return null; }
+    if (method === 'listen') {
+      let restored = '';
+      try { restored = (JSON.parse(typeof params === 'string' ? params : '{}') as Args).restoredRequestId; } catch (_) {}
+      if (typeof restored === 'string' && client.canResume(restored)) { this.ids.add(restored); }
+      this.listener = callback; client.addListener(this.response, this.ids); return null;
+    }
     if (method === 'unlisten') { this.release(); return null; }
     let args: Args;
     try { args = JSON.parse(typeof params === 'string' ? params : '{}') as Args; } catch (_) { callback?.({ status: 'invalid_content' }); return null; }
@@ -34,8 +39,9 @@ export class WechatModule extends KuiklyRenderBaseModule {
   }
   private release(): void {
     const client = WechatClient.current();
-    this.ids.forEach((id: string) => client?.cancel(id)); this.ids.clear();
+    const ids = Array.from(this.ids); this.ids.clear();
     client?.removeListener(this.response); this.listener = null;
+    ids.forEach((id: string) => client?.cancel(id));
   }
   onDestroy(): void { this.destroyed = true; this.release(); super.onDestroy(); }
 }

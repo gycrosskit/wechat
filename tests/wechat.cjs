@@ -6,7 +6,7 @@ let seq = 0, installed = true, accepted = true, pendingSend, packingGate, sent =
 class Base { checkArgs() { return true; } }
 class Auth extends Base {} class Share extends Base {} class Transfer extends Base {}
 const wx = { BaseReq: Base, SendAuthReq: Auth, SendAuthResp: class {}, SendMessageToWXReq: Share, SendMessageToWXResp: class {}, OpenBusinessViewReq: Transfer, OpenBusinessViewResp: class {}, WXImageObject: class {}, WXWebpageObject: class {}, WXMediaMessage: class {}, Log: { setLogImpl() {} },
-WXAPIFactory: { createWXAPI: () => ({ setPayReportEnabled() {}, handleWant: () => true, isWXAppInstalled: () => installed, sendReq: async (_ctx, req) => { sent.push(req); if (accepted === 'delay') return new Promise(resolve => { pendingSend = resolve; }); return accepted; } }) } };
+WXAPIFactory: { createWXAPI: () => ({ setPayReportEnabled() {}, handleWant: (want, handler) => { if (!want.verified) return false; handler.onResp(want.response); return true; }, isWXAppInstalled: () => installed, sendReq: async (_ctx, req) => { sent.push(req); if (accepted === 'delay') return new Promise(resolve => { pendingSend = resolve; }); return accepted; } }) } };
 Share.WXSceneTimeline = 1; Share.WXSceneSession = 0;
 const sdk = {
  '@tencent/wechat_open_sdk': wx, '@kit.AbilityKit': {},
@@ -66,5 +66,58 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  const cancelPreparing = client.shareImage('image-cancel', 'aGVsbG8=', 'session'); await flush(); client.cancel('image-cancel'); finish(); assert.equal(await cancelPreparing, 'cancelled'); packingGate = null; assert.equal(files.size, 0);
  installed = false; assert.equal(await client.authorize('no-wechat'), 'not_installed');
  assert(released >= 9);
+ // 请求进程 -> 丢失所有组件内存 -> 回跳先到 -> 可信日志恢复 -> 后挂 Kuikly 监听。
+ const fresh = () => { const mod = { exports: {} }; vm.runInNewContext(output, { exports: mod.exports, require: key => sdk[key], Uint8Array, ArrayBuffer, Set, Map }); return mod.exports.WechatClient; };
+ let saved = null;
+ const store = { load: () => saved, save: request => { saved = request ? { ...request } : null; } };
+ installed = true;
+ const First = fresh(); const first = First.configure('host-app-id', { cacheDir: '/tmp' }, store);
+ assert.equal(await first.authorize('cold-oauth'), 'requested'); const coldReq = sent.at(-1);
+ assert.equal(saved.transaction, coldReq.transaction); assert.equal(saved.state, coldReq.state);
+ const Second = fresh();
+ const valid = response(wx.SendAuthResp, coldReq, { state: coldReq.state, code: 'cold-code' });
+ assert.equal(Second.forwardWant({ verified: true, response: valid }), false);
+ const second = Second.configure('host-app-id', { cacheDir: '/tmp' }, store);
+ assert.equal(saved, null);
+ const moduleSource = fs.readFileSync(`${__dirname}/../ohos/wechat-native/src/main/ets/WechatModule.ets`, 'utf8');
+ const moduleOutput = ts.transpileModule(moduleSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+ const render = { KuiklyRenderBaseModule: class { onDestroy() {} } };
+ const moduleExports = { exports: {} };
+ vm.runInNewContext(moduleOutput, { exports: moduleExports.exports, require: key => key === './WechatClient' ? { WechatClient: Second } : render, Set });
+ const unrelated = new moduleExports.exports.WechatModule(); const wrongPage = [];
+ unrelated.call('listen', '{}', result => wrongPage.push(result)); assert.equal(wrongPage.length, 0);
+ const page = new moduleExports.exports.WechatModule(); const coldReceipts = [];
+ page.call('listen', JSON.stringify({ restoredRequestId: 'cold-oauth' }), result => coldReceipts.push(result));
+ assert.equal(coldReceipts.length, 1); assert.equal(coldReceipts[0].requestId, 'cold-oauth');
+ second.handleWant({ verified: true, response: valid }); assert.equal(coldReceipts.length, 1);
+ page.onDestroy();
+ const again = new moduleExports.exports.WechatModule();
+ again.call('listen', JSON.stringify({ restoredRequestId: 'cold-oauth' }), result => coldReceipts.push(result));
+ assert.equal(coldReceipts.length, 1);
+ const Third = fresh(); const thirdClient = Third.configure('host-app-id', { cacheDir: '/tmp' }, store); const repeats = [];
+ thirdClient.addListener(r => repeats.push(r)); thirdClient.handleWant({ verified: true, response: valid }); assert.equal(repeats.length, 0);
+ assert.equal(await thirdClient.authorize('type-guard'), 'requested'); const typeReq = sent.at(-1);
+ thirdClient.handleWant({ verified: false, response: response(wx.SendAuthResp, typeReq, { state: typeReq.state, code: 'forged' }) });
+ thirdClient.handleWant({ verified: true, response: response(wx.SendMessageToWXResp, typeReq) });
+ thirdClient.handleWant({ verified: true, response: response(wx.SendAuthResp, { transaction: 'unknown' }, { state: typeReq.state, code: 'code' }) });
+ thirdClient.handleWant({ verified: true, response: response(wx.SendAuthResp, typeReq, { state: 'wrong', code: 'code' }) });
+ assert.equal(repeats.length, 0); assert.equal(await thirdClient.authorize('busy-cold'), 'busy');
+ thirdClient.cancel('type-guard'); assert.equal(saved, null);
+ const Fourth = fresh(); const fourth = Fourth.configure('host-app-id', { cacheDir: '/tmp' }, store); const cancelled = [];
+ fourth.addListener(r => cancelled.push(r)); fourth.handleWant({ verified: true, response: response(wx.SendAuthResp, typeReq, { state: typeReq.state, code: 'late' }) }); assert.equal(cancelled.length, 0);
+ assert.equal(await fourth.openMerchantTransfer('cold-transfer', 'merchant', 'app', 'package'), 'requested'); const coldTransfer = sent.at(-1);
+ const Fifth = fresh(); const fifth = Fifth.configure('host-app-id', { cacheDir: '/tmp' }, store);
+ fifth.handleWant({ verified: true, response: response(wx.OpenBusinessViewResp, coldTransfer, { businessType: 'wrong', extMsg: '{"result":"success"}' }) }); assert(saved);
+ fifth.handleWant({ verified: true, response: response(wx.OpenBusinessViewResp, coldTransfer, { businessType: 'requestMerchantTransfer', extMsg: '{"result":"success"}' }) });
+ const transferReceipts = []; const transferListener = r => transferReceipts.push(r); fifth.addListener(transferListener); assert.equal(transferReceipts.length, 1); assert.equal(transferReceipts[0].pageResult, 'success'); assert(!('paid' in transferReceipts[0]));
+ fifth.removeListener(transferListener);
+ assert.equal(await fifth.authorize('buffer-cancel'), 'requested'); const bufferedReq = sent.at(-1);
+ fifth.handleWant({ verified: true, response: response(wx.SendAuthResp, bufferedReq, { state: bufferedReq.state, code: 'code' }) });
+ fifth.cancel('buffer-cancel'); const cancelledBuffer = []; fifth.addListener(r => cancelledBuffer.push(r)); assert.equal(cancelledBuffer.length, 0);
+ // 页面销毁取消可信 pending；下一进程没有可恢复记录。
+ assert.equal(await second.authorize('disposed-page'), 'requested'); const disposedReq = sent.at(-1);
+ const ownedPage = new moduleExports.exports.WechatModule(); ownedPage.call('listen', JSON.stringify({ restoredRequestId: 'disposed-page' }), () => assert.fail('disposed page receipt'));
+ ownedPage.onDestroy(); assert.equal(saved, null); second.handleWant({ verified: true, response: response(wx.SendAuthResp, disposedReq, { state: disposedReq.state, code: 'late' }) });
+ console.log('OHOS cold process, SDK verification, trusted journal, late Kuikly listener, cancellation and replay checks passed');
  console.log('OHOS OAuth state, transaction, duplicate/late callbacks, concurrency, raw transfer encoding, URL validation and temporary file lifecycle passed');
 })().catch(e => { console.error(e); process.exitCode = 1; });

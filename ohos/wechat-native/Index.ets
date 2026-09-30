@@ -1,2 +1,2 @@
-export { WechatClient, WechatReceipt, WechatStatus } from './src/main/ets/WechatClient';
+export { WechatClient, WechatReceipt, WechatStatus, WechatPendingRequest, WechatRequestStore } from './src/main/ets/WechatClient';
 export { WechatModule } from './src/main/ets/WechatModule';

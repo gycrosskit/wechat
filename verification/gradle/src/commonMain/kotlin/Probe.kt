@@ -11,3 +11,9 @@ fun probe(client: WechatClient, listener: WechatListener) {
     )
     check(methods.size == 5) // 仅编译公共 API，不发起微信操作。
 }
+
+class RequestStoreProbe : WechatRequestStore {
+    private var request: WechatPendingRequest? = null
+    override fun load() = request
+    override fun save(request: WechatPendingRequest?) { this.request = request }
+}

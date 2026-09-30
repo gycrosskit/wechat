@@ -1,30 +1,37 @@
 package io.github.gycrosskit.wechat
 
-/** 所有访问都由平台串行化到主线程；精确匹配 SDK transaction 和 OAuth state。 */
-internal class WechatSession {
-    data class Pending(val id: String, val transaction: String, val kind: WechatKind, val state: String?)
-    private var pending: Pending? = null
-    private val usedIds = mutableSetOf<String>()
+/** 所有访问由平台串行化到主线程；恢复记录来自宿主存储，不从回跳解析。 */
+internal class WechatSession(private val store: WechatRequestStore? = null) {
+    private var pending: WechatPendingRequest? = store?.load()?.takeIf(::valid)
+    private val usedIds = mutableSetOf<String>().apply { pending?.let { add(it.requestId) } }
+    private val usedTransactions = mutableSetOf<String>().apply { pending?.let { add(it.transaction) } }
     fun begin(id: String, token: String, kind: WechatKind, state: String? = null): WechatStatus? {
-        if (id.isBlank() || id.length > 128 || token.isBlank() || (kind == WechatKind.AUTHORIZATION && state.isNullOrBlank())) return WechatStatus.INVALID_CONTENT
+        val request = WechatPendingRequest(id, token, kind, state)
+        if (!valid(request) || id in usedIds || token in usedTransactions) return WechatStatus.INVALID_CONTENT
         if (pending != null) return WechatStatus.BUSY
-        // 不淘汰 requestId，防止宿主复用 ID 后旧回调结束新请求。SDK 实例按进程持有。
-        if (!usedIds.add(id)) return WechatStatus.INVALID_CONTENT
-        pending = Pending(id, token, kind, state)
+        usedIds.add(id); usedTransactions.add(token)
+        try { store?.save(request) } catch (_: Exception) { return WechatStatus.FAILED }
+        pending = request
         return null
     }
-    fun consume(transaction: String?, kind: WechatKind, state: String? = null): Pending? {
+    fun consume(transaction: String?, kind: WechatKind, state: String? = null): WechatPendingRequest? {
         val current = pending ?: return null
         if (current.kind != kind || current.transaction != transaction) return null
-        // 包括取消和失败在内也要求 state，缺失 state 的旧 SDK 回调只能由宿主取消等待。
         if (kind == WechatKind.AUTHORIZATION && current.state != state) return null
+        // 清除失败时保留等待且不交付，避免进程重建重复消费。
+        store?.save(null)
         pending = null
         return current
     }
     fun cancel(id: String): Boolean {
-        if (pending?.id != id) return false
+        if (pending?.requestId != id) return false
+        store?.save(null)
         pending = null
         return true
     }
-    fun isCurrent(id: String): Boolean = pending?.id == id
+    fun isCurrent(id: String): Boolean = pending?.requestId == id
+    private fun valid(request: WechatPendingRequest): Boolean =
+        request.requestId.isNotBlank() && request.requestId.length <= 128 &&
+            request.transaction.isNotBlank() && request.transaction.length <= 128 &&
+            if (request.kind == WechatKind.AUTHORIZATION) !request.state.isNullOrBlank() && request.state.length <= 256 else request.state == null
 }

@@ -7,6 +7,9 @@ import * as wx from '@tencent/wechat_open_sdk';
 
 export type WechatStatus = 'requested' | 'busy' | 'not_installed' | 'unsupported' | 'invalid_content' | 'failed' | 'cancelled';
 export interface WechatReceipt { requestId: string; kind: string; errorCode: number; authorizationCode?: string; pageResult?: string; }
+export interface WechatPendingRequest { requestId: string; transaction: string; kind: string; state: string; }
+/** 同一 App 的可信本地记录；同步原子保存，失败抛异常。禁止从 Want/页面参数构造。 */
+export interface WechatRequestStore { load(): WechatPendingRequest | null; save(request: WechatPendingRequest | null): void; }
 interface Pending { id: string; transaction: string; kind: string; state: string; path: string; cancelled: boolean; }
 interface PageResult { result?: string; }
 type Listener = (receipt: WechatReceipt) => void;
@@ -15,26 +18,52 @@ class QuietLog implements wx.LogInterface { print(_level: wx.LogLevel, _tag: str
 /** 宿主配置一次后，认证、分享和 EntryAbility 回跳共用同一 SDK 入口。 */
 export class WechatClient implements wx.WXApiEventHandler {
   private static instance: WechatClient | null = null;
+  private static wants: Want[] = [];
   private api: wx.WXApi;
+  private store: WechatRequestStore | null;
+  private receipts: WechatReceipt[] = [];
+  private usedTransactions: Set<string> = new Set();
   private pending: Pending | null = null;
   private usedIds: Set<string> = new Set();
-  private listeners: Set<Listener> = new Set();
+  private listeners: Map<Listener, Set<string> | null> = new Map();
   private appId: string;
   private context: common.UIAbilityContext;
-  private constructor(appId: string, context: common.UIAbilityContext) {
+  private constructor(appId: string, context: common.UIAbilityContext, store: WechatRequestStore | null) {
+    this.store = store;
+    const saved = store?.load();
+    if (saved && this.validRequest(saved)) {
+      this.pending = { id: saved.requestId, transaction: saved.transaction, kind: saved.kind, state: saved.state, path: '', cancelled: false };
+      this.usedIds.add(saved.requestId); this.usedTransactions.add(saved.transaction);
+    }
     this.appId = appId; this.context = context;
     wx.Log.setLogImpl(new QuietLog());
     this.api = wx.WXAPIFactory.createWXAPI(appId, context);
     this.api.setPayReportEnabled(false);
   }
-  static configure(appId: string, context: common.UIAbilityContext): WechatClient {
+  static configure(appId: string, context: common.UIAbilityContext, store: WechatRequestStore | null = null): WechatClient {
     if (!appId.trim()) { throw new Error('WeChat appId missing'); }
     if (WechatClient.instance && WechatClient.instance.appId !== appId) { throw new Error('WeChat already configured'); }
-    if (!WechatClient.instance) { WechatClient.instance = new WechatClient(appId, context); }
+    if (!WechatClient.instance) {
+      WechatClient.instance = new WechatClient(appId, context, store);
+      const wants = WechatClient.wants; WechatClient.wants = [];
+      wants.forEach((want: Want) => WechatClient.instance?.handleWant(want));
+    }
     return WechatClient.instance;
   }
   static current(): WechatClient | null { return WechatClient.instance; }
-  addListener(listener: Listener): void { this.listeners.add(listener); }
+  /** EntryAbility 尚未初始化时仅暂存原始 Want，配置完成后仍交官方 SDK 验证。 */
+  static forwardWant(want: Want): boolean {
+    if (WechatClient.instance) { return WechatClient.instance.handleWant(want); }
+    if (WechatClient.wants.length === 4) { WechatClient.wants.shift(); }
+    WechatClient.wants.push(want); return false;
+  }
+  canResume(id: string): boolean { return this.pending?.id === id || this.receipts.some((receipt: WechatReceipt) => receipt.requestId === id); }
+  addListener(listener: Listener, ids: Set<string> | null = null): void {
+    this.listeners.set(listener, ids);
+    const ready = this.receipts.filter((receipt: WechatReceipt) => !ids || ids.has(receipt.requestId));
+    this.receipts = this.receipts.filter((receipt: WechatReceipt) => ids !== null && !ids.has(receipt.requestId));
+    ready.forEach((receipt: WechatReceipt) => listener(receipt));
+  }
   removeListener(listener: Listener): void { this.listeners.delete(listener); }
   handleWant(want: Want): boolean { try { return this.api.handleWant(want, this); } catch (_) { return false; } }
   onReq(_req: wx.BaseReq): void {}
@@ -54,9 +83,18 @@ export class WechatClient implements wx.WXApiEventHandler {
       try { const parsed = JSON.parse(resp.extMsg ?? '{}') as PageResult; if (typeof parsed?.result === 'string') { page = parsed.result; } } catch (_) {}
       result = { requestId: current.id, kind: current.kind, errorCode: resp.errCode, pageResult: page };
     } else { return; }
+    this.store?.save(null);
     this.pending = null;
     this.removeFile(current.path);
-    this.listeners.forEach((listener: Listener) => listener(result));
+    let delivered = false;
+    this.listeners.forEach((ids: Set<string> | null, listener: Listener) => {
+      if (!ids || ids.has(result.requestId)) { delivered = true; listener(result); }
+    });
+    if (!delivered) {
+      // ponytail: 最多缓存 64 笔；跨进程结果交付由宿主业务存储承担。
+      if (this.receipts.length === 64) { this.receipts.shift(); }
+      this.receipts.push(result);
+    }
   }
   async authorize(id: string): Promise<WechatStatus> {
     const rejected = this.begin(id, 'authorization'); if (rejected) { return rejected; }
@@ -123,8 +161,10 @@ export class WechatClient implements wx.WXApiEventHandler {
     return this.send(req, pending);
   }
   cancel(id: string): void {
+    this.receipts = this.receipts.filter((receipt: WechatReceipt) => receipt.requestId !== id);
     const pending = this.pending;
     if (!pending || pending.id !== id) { return; }
+    this.store?.save(null);
     pending.cancelled = true; this.pending = null; this.removeFile(pending.path);
   }
   private begin(id: string, kind: string): WechatStatus | null {
@@ -132,7 +172,10 @@ export class WechatClient implements wx.WXApiEventHandler {
     if (this.pending) { return 'busy'; }
     this.usedIds.add(id);
     try { if (!this.api.isWXAppInstalled()) { return 'not_installed'; } } catch (_) { return 'failed'; }
-    this.pending = { id, transaction: util.generateRandomUUID(), kind, state: '', path: '', cancelled: false };
+    const transaction = util.generateRandomUUID();
+    if (this.usedTransactions.has(transaction)) { return 'failed'; }
+    this.usedTransactions.add(transaction);
+    this.pending = { id, transaction, kind, state: '', path: '', cancelled: false };
     return null;
   }
   private sendShare(message: wx.WXMediaMessage, scene: string, pending: Pending): Promise<WechatStatus> {
@@ -144,6 +187,8 @@ export class WechatClient implements wx.WXApiEventHandler {
     req.transaction = pending.transaction;
     try {
       if (!req.checkArgs()) { return this.fail(pending, 'invalid_content'); }
+      // 在 SDK 发送前写入；SDK 回执可能早于 send Promise 完成。
+      this.store?.save({ requestId: pending.id, transaction: pending.transaction, kind: pending.kind, state: pending.state });
       const accepted = await this.api.sendReq(this.context, req);
       if (pending.cancelled) { await this.removeFile(pending.path); return 'cancelled'; }
       if (accepted) { return 'requested'; }
@@ -151,7 +196,7 @@ export class WechatClient implements wx.WXApiEventHandler {
     return this.fail(pending, 'failed');
   }
   private fail(pending: Pending, status: WechatStatus): WechatStatus {
-    if (this.pending === pending) { this.pending = null; }
+    if (this.pending === pending) { this.store?.save(null); this.pending = null; }
     this.removeFile(pending.path); return status;
   }
   private async thumbnail(source: image.ImageSource): Promise<Uint8Array | null> {
@@ -164,6 +209,12 @@ export class WechatClient implements wx.WXApiEventHandler {
       try { const data = new Uint8Array(await packer.packing(pixels, { format: 'image/jpeg', quality: 60 })); return data.length <= 32 * 1024 ? data : null; }
       finally { await packer.release(); }
     } finally { await pixels.release(); }
+  }
+  private validRequest(request: WechatPendingRequest): boolean {
+    return typeof request.requestId === 'string' && !!request.requestId.trim() && request.requestId.length <= 128 &&
+      typeof request.transaction === 'string' && !!request.transaction.trim() && request.transaction.length <= 128 &&
+      typeof request.state === 'string' && (request.kind === 'authorization' ? !!request.state.trim() && request.state.length <= 256 :
+      (request.kind === 'share' || request.kind === 'merchant_transfer') && request.state === '');
   }
   private validScene(scene: string): boolean { return scene === 'session' || scene === 'timeline'; }
   private validUrl(address: string): boolean {

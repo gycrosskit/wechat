@@ -19,20 +19,37 @@ public struct WechatReceipt {
 
 /** 宿主持有唯一实例；所有入口和回调在主线程。注册前由宿主决定隐私授权。 */
 public final class WechatClient: NSObject, WXApiDelegate {
-    private let session = WechatSession()
+    private let session: WechatSession
     private let submitted: (String, String) -> Void
-    private let receipt: (WechatReceipt) -> Void
+    private var receipt: ((WechatReceipt) -> Void)?
+    private var receipts: [WechatReceipt] = []
     private let registered: Bool
     private var callbackDigests = Set<String>()
     public init(appID: String, universalLink: String,
                 onSubmitted: @escaping (String, String) -> Void,
-                onReceipt: @escaping (WechatReceipt) -> Void) {
+                onReceipt: ((WechatReceipt) -> Void)? = nil,
+                store: WechatAuthorizationStore? = nil) {
         precondition(Thread.isMainThread)
+        self.session = WechatSession(store: store)
         self.submitted = onSubmitted
         self.receipt = onReceipt
         let link = URLComponents(string: universalLink)
         self.registered = !appID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && link?.scheme == "https" && link?.host != nil && WXApi.registerApp(appID, universalLink: universalLink)
         super.init()
+    }
+    public func attach(_ listener: @escaping (WechatReceipt) -> Void) {
+        precondition(Thread.isMainThread)
+        receipt = listener
+        let buffered = receipts; receipts = []
+        buffered.forEach(listener)
+    }
+    public func detach() { precondition(Thread.isMainThread); receipt = nil }
+    private func deliver(_ result: WechatReceipt) {
+        if let receipt { receipt(result) } else {
+            // ponytail: 最多缓存 64 笔，跨进程结果交付由宿主保存。
+            if receipts.count == 64 { receipts.removeFirst() }
+            receipts.append(result)
+        }
     }
     public func handleOpenURL(_ url: URL) -> Bool {
         precondition(Thread.isMainThread)
@@ -93,6 +110,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
     }
     public func cancel(requestID: String) {
         precondition(Thread.isMainThread)
+        receipts.removeAll { $0.requestID == requestID }
         if session.cancel(requestID) { submitted(requestID, "cancelled") }
     }
     public func onReq(_ req: BaseReq) {}
@@ -101,13 +119,13 @@ public final class WechatClient: NSObject, WXApiDelegate {
         if let auth = resp as? SendAuthResp {
             guard let id = session.consumeAuthorization(auth.state) else { return }
             let code = auth.errCode == 0 ? auth.code : nil
-            receipt(WechatReceipt(requestID: id, kind: .authorization, errorCode: auth.errCode == 0 && (code?.isEmpty ?? true) ? -1 : auth.errCode, authorizationCode: code, pageResult: nil))
+            deliver(WechatReceipt(requestID: id, kind: .authorization, errorCode: auth.errCode == 0 && (code?.isEmpty ?? true) ? -1 : auth.errCode, authorizationCode: code, pageResult: nil))
         } else if resp is SendMessageToWXResp {
-            receipt(WechatReceipt(requestID: nil, kind: .share, errorCode: resp.errCode, authorizationCode: nil, pageResult: nil))
+            deliver(WechatReceipt(requestID: nil, kind: .share, errorCode: resp.errCode, authorizationCode: nil, pageResult: nil))
         } else if let transfer = resp as? WXOpenBusinessViewResp, transfer.businessType == "requestMerchantTransfer" {
             let data = transfer.extMsg?.data(using: .utf8)
             let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
-            receipt(WechatReceipt(requestID: nil, kind: .merchantTransfer, errorCode: resp.errCode, authorizationCode: nil, pageResult: json?["result"] as? String))
+            deliver(WechatReceipt(requestID: nil, kind: .merchantTransfer, errorCode: resp.errCode, authorizationCode: nil, pageResult: json?["result"] as? String))
         }
     }
     private func begin(_ id: String, state: String? = nil) -> Bool {

@@ -14,11 +14,11 @@ class WechatModule : Module(), WechatClient {
     private val callbacks = mutableMapOf<String, CallbackRef>()
     private var disposed = false
     override fun moduleName(): String = NAME
-    fun attach(listener: WechatListener) {
+    fun attach(listener: WechatListener, restoredRequestId: String? = null) {
         if (disposed) return
         this.listener = listener
         if (listening != null) return
-        listening = toNative(true, "listen", "{}", { payload ->
+        listening = toNative(true, "listen", JSONObject().apply { restoredRequestId?.let { put("restoredRequestId", it) } }.toString(), { payload ->
             if (disposed || payload == null) return@toNative
             val kind = when (payload.optString("kind")) {
                 "authorization" -> WechatKind.AUTHORIZATION

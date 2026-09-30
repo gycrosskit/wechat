@@ -14,6 +14,15 @@ data class WechatReceipt(
     val pageResult: String? = null,
 )
 
+/** 仅允许从同一 App 的可信本地存储恢复；transaction/state 不得从 Intent、Want 或页面参数构造。 */
+data class WechatPendingRequest(val requestId: String, val transaction: String, val kind: WechatKind, val state: String? = null)
+
+/** 主线程同步、原子读写。save(null) 必须持久清除；失败抛异常，宿主不得重放旧快照。 */
+interface WechatRequestStore {
+    fun load(): WechatPendingRequest?
+    fun save(request: WechatPendingRequest?)
+}
+
 interface WechatListener {
     fun onSubmitted(requestId: String, status: WechatStatus)
     fun onReceipt(receipt: WechatReceipt)

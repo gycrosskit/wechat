@@ -5,14 +5,14 @@ import GycWechatNative
 
 final class KmpWechatBridge: IosWechatBridge {
     let native: GycWechatNative.WechatClient
-    init(appID: String, universalLink: String, listener: WechatListener) {
+    init(appID: String, universalLink: String, listener: WechatListener, store: WechatAuthorizationStore? = nil) {
         native = GycWechatNative.WechatClient(appID: appID, universalLink: universalLink,
             onSubmitted: { id, status in
                 listener.onSubmitted(requestId: id, status: Self.status(status))
             }, onReceipt: { response in
                 let kind: WechatCore.WechatKind = response.kind == .authorization ? .authorization : response.kind == .share ? .share : .merchantTransfer
                 listener.onReceipt(receipt: WechatCore.WechatReceipt(requestId: response.requestID, kind: kind, errorCode: response.errorCode, authorizationCode: response.authorizationCode, pageResult: response.pageResult))
-            })
+            }, store: store)
     }
     func authorize(requestId: String) { native.authorize(requestID: requestId) }
     func shareImage(requestId: String, data: KotlinByteArray, scene: WechatCore.WechatScene) { native.shareImage(requestID: requestId, data: Self.data(data), scene: scene == .timeline ? .timeline : .session) }
