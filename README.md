@@ -1,0 +1,130 @@
+# GY CrossKit Wechat
+
+微信 SDK 注册与回跳入口，提供 OAuth 授权、图片/网页好友或朋友圈分享、商家转账确认页拉起。仅返回 SDK 请求受理、授权 Code 与页面回执；`pageResult=success` 表示确认页展示成功，资金状态由宿主服务端核实。
+
+本轮为本地可评审源码，版本 `0.1.0` 尚未提交、远程建仓或发布。Maven、Swift Package 与 ohpm 路径均为待发布方案；不要把本地编译理解为远程可下载。
+
+## 平台与依赖
+
+| 入口 | 实现与最低版本 | 外部 SDK |
+| --- | --- | --- |
+| `wechat-core` Android | API 24，KMP `WechatClient` | `com.tencent.mm.opensdk:wechat-sdk-android:6.8.34` |
+| `wechat-core` iOS | iOS 15，`IosWechatBridge` / `IosWechatClient` | 宿主连接下述原生包 |
+| Swift `GycWechatNative` | iOS 15，`WechatClient`，一个 `WXApiDelegate` | CocoaPods `WechatOpenSDK-XCFramework` **2.0.7** |
+| HAR `@gycrosskit/wechat-native` | HarmonyOS API 22 构建，原生 Promise API | `@tencent/wechat_open_sdk` **1.0.23** |
+| `wechat-kuikly` | OHOS Kuikly Module `GycWechat` | Kotlin **2.2.21-1.0.0**、Kuikly core **2.28.0-2.0.21-ohos**、render **2.28.0** |
+
+图片输入最大 10 MiB，缩略图下采样后最大 32 KiB。Android/iOS 使用图片字节；OHOS 原生接口使用纯 Base64，不支持 data URL。OHOS 图片分享只接受 PNG/JPEG。所有端仅支持普通好友会话和朋友圈，不提供指定联系人。纯 OpenHarmony、模拟器没有微信客户端时不能完成实际授权和分享。
+
+商家转账 Android 依照官方文档检查 `wxAppSupportAPI >= 0x28002d33`，客户端至少微信 8.0.45.51；iOS 官方最低微信 8.0.45，但通用 `isWXAppSupport()` 无法判断这一专用版本，必须以页面回执为准。OHOS SDK 1.0.23 有 `OpenBusinessViewReq`，可构建对应请求；尚未验证微信设备上该业务的兼容性，因此不承诺具体最低微信版本。
+
+SDK 二进制、AppID、Universal Link、签名、商户凭据均由宿主提供，不进入库源码。库为 Apache-2.0；厂商 SDK 适用其自身授权与隐私政策。
+
+## 请求与回调边界
+
+`WechatListener.onSubmitted(requestId, status)` 表示发送受理；`REQUESTED` 不表示最终分享、登录或转账成功。`onReceipt(WechatReceipt)` 保留 SDK `errorCode`、授权 Code 或页面 `result`。宿主不得记录 Code、state、package、原始回跳 URL 或 SDK 原始错误文本。
+
+- Android/OHOS 每个进程级实例同时等待一笔请求；新请求返回 `BUSY`。内部随机 `transaction` 与请求类型精确匹配，OAuth 成功、取消和失败均严格匹配安全随机 state。重复和已取消请求的迟到回执被忽略。
+- iOS 只有 OAuth 带 state；分享/转账 SDK 2.0.7 的 `BaseResp` 没有 `transaction`。这两类回执 **`requestId == nil`**，不能认定为某一笔请求完成。SDK send completion 自己有 requestId；发送期间或 OAuth 等待期间返回 busy，share/transfer 受理后即可发下一笔，后续 SDK 回执仍完全不关联。重复 URL/Universal Link 以 SHA-256 摘要去重；不同回跳若内容不同，仍可能产生无法归属的页面回执，业务不能据此触发任务或资金动作。
+- `cancel` 只结束库的本地等待，无法关闭微信页面。无 state 的老 SDK 授权回调被忽略，宿主可以在超时/页面离开时取消。宿主为每次调用生成不可复用的 requestId（最长 128 字符），库在实例生命周期内保留已使用 ID。
+- 图片准备期间也占用请求槽位。Android Bitmap、iOS ImageIO 图像为内存数据；OHOS 图片文件保留至精确匹配的回执、发送失败或取消，文件、ImageSource、PixelMap、ImagePacker 分别释放。页面销毁需调用 Kuikly `dispose()`；原生监听需对应移除并取消自己的请求。
+- 回执可能早于异步 send completion 到达；宿主不应以“尚未收到 REQUESTED”为理由丢弃已严格校验的授权回执。
+
+没有业务登录换票、roomId、分享任务完成、订单查询、业务文案和隐私授权流程。未实现普通 `PayReq` APP 支付。
+
+## Android 与 KMP 接入
+
+本地验证坐标（尚未发布）：
+
+```kotlin
+implementation("com.github.gycrosskit.wechat:wechat-core:0.1.0")
+// OHOS Kuikly 消费者额外添加：
+implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.0")
+```
+
+宿主在隐私授权后于主线程构造并持有唯一 `AndroidWechatClient(application, appId, listener)`。授权调用 `authorize(requestId)`；网页分享调用 `shareWebPage(requestId, url, title, description, thumbnailBytes, WechatScene.SESSION)`；转账参数全部来自服务端并原样传入 `openMerchantTransfer`。
+
+**宿主必须自行实现 `{applicationId}.wxapi.WXEntryActivity`**。Activity 的 `onCreate` 与 `onNewIntent` 将 Intent 交给同一实例的 `handleIntent(intent)`，随后 `finish()`；不要直接读取 Intent 中的授权或转账字段，也不要创建第二个 SDK 实例。回跳期间 Application 冷启动仍要先接线；没有内存中的 pending 请求时，旧回执会被丢弃。
+
+宿主 Manifest：
+
+```xml
+<activity android:name=".wxapi.WXEntryActivity"
+    android:exported="true"
+    android:launchMode="singleTask"
+    android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+```
+
+宿主配置 INTERNET 权限及微信开放平台的包名和签名。库 Manifest 仅合并 `queries/com.tencent.mm` 包可见性，固定 Activity 名称与签名不由库猜测。SDK 的 Intent 验签仍由官方 `handleIntent` 完成。
+
+## iOS 原生与 KMP 接入
+
+原生包可用根 `GycWechatNative.podspec`（本地 Pod `:path => '../wechat'`），它通过外部 CocoaPods 依赖精确版本 2.0.7。也可用本地 Swift Package 产品 `GycWechatNative`；Swift Package 不提供厂商 binaryTarget，宿主必须将官方 XCFramework 的目标平台 slice 加入 Swift/Framework 搜索路径并链接（CocoaPods 可自动管理）。单独添加此 Swift Package、未接线 WechatOpenSDK 时无法编译。
+
+```swift
+import GycWechatNative
+// 主线程、隐私授权后，在 App 级容器中持有唯一实例：
+let wechat = WechatClient(appID: hostAppID, universalLink: hostUniversalLink,
+    onSubmitted: { requestID, status in /* 请求受理 */ },
+    onReceipt: { receipt in /* Code 或 SDK 页面回执 */ })
+```
+
+`status` 为 `requested / busy / not_installed / unsupported / invalid_content / failed / cancelled`。UIApplicationDelegate/SwiftUI 把 URL Scheme 和 Universal Link 分别交给 `handleOpenURL` 和 `handleUniversalLink`。Info.plist 的 AppID URL Scheme、`LSApplicationQueriesSchemes`（`weixin`、`weixinULAPI`）、Associated Domains、Universal Link 域名服务端 AASA 与开放平台配置均由宿主负责。将授权 Code 返回宿主后不等待 UIApplication 激活，不额外保存凭据。
+
+KMP 宿主实现导出的 `IosWechatBridge`，委托给原生 `WechatClient`，再创建 `IosWechatClient(bridge)`。完整适配示例为 `iosApp/KmpWechatBridge.swift`，当前示例用 framework 名 `WechatCore`；实际宿主改为其导出的 framework 名。示例已对真实生成的 KMP framework typecheck。
+
+## HarmonyOS 与 Kuikly
+
+HAR 待发布名为 `@gycrosskit/wechat-native@0.1.0`。本轮使用本地 `WechatNative.har` 消费，不存在已发布的 ohpm 坐标。
+
+```typescript
+import { WechatClient } from '@gycrosskit/wechat-native';
+// 隐私授权后，EntryAbility 先注册，再交回跳 Want 给官方 SDK：
+const client = WechatClient.configure(hostAppId, context);
+client.handleWant(want);
+client.addListener(onReceipt);
+const status = await client.authorize(uniqueRequestId);
+// 页面结束：client.cancel(uniqueRequestId); client.removeListener(onReceipt);
+```
+
+EntryAbility `onCreate`、`onNewWant` 共用此入口。Bundle Name、identifier、签名指纹、官方回跳 schemes/skills 和微信开放平台审核均由宿主接线；库不解析 Want 的授权字段、不配置虚构的签名。未注册时不可使用 Kuikly Module；注册发生在宿主层，不从页面 JSON 信任 AppID。
+
+Kotlin Pager 注册 `WechatModule.NAME to WechatModule()`，调用 `attach(listener)`；ArkTS render 注册 `WechatModule.MODULE_NAME` 对应 `WechatModule`。两端 Module 名都是 `GycWechat`。页面销毁调用 Kotlin `dispose()`，取消本页面拥有的请求并释放 persistent callback。原生全局 SDK 不随 Kuikly 页面销毁。
+
+## 本地验证
+
+使用 JDK 21，`ANDROID_HOME` 指向本机 Android SDK。构建时固定 `--max-workers=1`，没有真实微信操作。
+
+```sh
+bash gradlew :wechat-core:compileDebugKotlinAndroid :wechat-core:jvmTest \
+  :wechat-core:linkDebugFrameworkIosSimulatorArm64 :wechat-core:compileKotlinOhosArm64 \
+  :wechat-kuikly:compileKotlinOhosArm64 --max-workers=1 --no-daemon
+node tests/wechat.cjs
+xcrun swiftc iosApp/Sources/GycWechatNative/WechatSession.swift verification/swift/main.swift -o build/swift-check
+build/swift-check
+# 构建源码为本地 Maven 文件仓库，仅供独立消费者验证：
+bash gradlew :wechat-core:publishToMavenLocal :wechat-kuikly:publishToMavenLocal \
+  -Dmaven.repo.local="$PWD/verification/maven" --max-workers=1 --no-daemon
+bash gradlew -p verification/gradle -PwechatMavenRepo="$PWD/verification/maven" \
+  compileDebugKotlinAndroid linkDebugFrameworkIosSimulatorArm64 compileKotlinOhosArm64 \
+  --max-workers=1 --no-daemon
+# DevEco 环境：
+cd ohos && ohpm install --all
+hvigorw --mode module -p module=WechatNative@default -p product=default assembleHar --no-daemon
+```
+
+Swift Package 构建需向 `xcodebuild` 提供对应官方 XCFramework slice 的 `FRAMEWORK_SEARCH_PATHS` 和 `OTHER_SWIFT_FLAGS='-F <slice-directory>'`，使用 `-jobs 1 CODE_SIGNING_ALLOWED=NO`。独立 Swift consumer 位于 `verification/swift-consumer`；独立 HAR consumer 位于 `verification/ohos`，安装生产出来的本地 HAR，再 `assembleHar`。
+
+实际结果见 [VALIDATION.md](VALIDATION.md)。真实客户端安装/未安装、OAuth 返回、好友/朋友圈 UI、Universal Link 和 OHOS 签名回跳均未做设备验收；没有真实登录、支付、转账或发送分享。
+
+## 官方依据与来源
+
+通用实现依据 sxmqliveAndroid `codex/harmony-production-integration` 的 Android WechatGateway/WechatCallback、AuthPlatform 的 OAuth state、iOS Auth/WechatSdkBridge 和 OHOS Wechat/AuthModule 提取；业务依赖全部移除。
+
+本轮检索核实官方 [Android 商家转账](https://pay.wechatpay.cn/doc/v3/merchant/4012719576)、[iOS 商家转账](https://pay.wechatpay.cn/doc/v3/merchant/4012719578) 与 [转账参数常见问题](https://pay.wechatpay.cn/doc/v3/merchant/4013778940)：SDK 最低版本、Android 版本门槛、业务类型、参数原样 URL 编码、页面回执非资金终态。
+
+微信开放平台 [Android 接入](https://developers.weixin.qq.com/doc/oplatform/Mobile_App/Access_Guide/Android.html)、[iOS 接入](https://developers.weixin.qq.com/doc/oplatform/Mobile_App/Access_Guide/iOS.html)、[OHOS 接入](https://developers.weixin.qq.com/doc/oplatform/Mobile_App/Access_Guide/ohos.html) 和 [OAuth 指引](https://developers.weixin.qq.com/doc/oplatform/Mobile_App/WeChat_Login/Development_Guide.html) 已尝试读取，本轮浏览工具未成功取得正文；OAuth 字段和 iOS 无 transaction 边界以安装的官方 SDK 2.0.7 Header、Android 6.8.34 和 OHOS 1.0.23 API 及实际编译核对，完整宿主接线仍需依照开放平台最新配置验收。
+
+## 发布准备
+
+`jitpack-install.sh`、`jitpack-metadata.py` 使用 GY CrossKit 共用的不可变 Release Maven 归档模板；`jitpack.yml` 调用 `bash jitpack-install.sh wechat`。`release-checksums.txt` 留空，因此任何未验证标签都会停止，而不会误称已发布。后续正式发布需从确认的提交打包 Maven 目录、写入该标签归档的 SHA-256，再分别验证远程 Maven、Pod/Swift 和 ohpm 消费。本轮没有执行这些外部动作。

@@ -1,0 +1,16 @@
+.gradle/
+.kotlin/
+**/build/
+.build/
+.swiftpm/
+local.properties
+**/oh_modules/
+**/.hvigor/
+**/oh-package-lock.json5
+verification/maven/
+verification/swift-build/
+*.log
+.DS_Store
+verification/swift-check
+verification/ohos/*/src/main/resources/
+**/BuildProfile.ets

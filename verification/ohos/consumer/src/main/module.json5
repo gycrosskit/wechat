@@ -1,0 +1,7 @@
+{
+  "module": {
+    "name": "Consumer",
+    "type": "har",
+    "deviceTypes": ["default", "tablet"]
+  }
+}
