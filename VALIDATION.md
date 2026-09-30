@@ -34,3 +34,9 @@ HAR 有外部 Kuikly strict-typing、packing deprecation、设备系统能力及
 Maven 候选改为 0.1.1，组件逻辑不变。JitPack Linux 实际错误为将 macOS AppleDouble `._*.module` 读取为 JSON。`release-pack.py` 用 Python tarfile 打包当前版本，排除 AppleDouble；归档逐项 JSON 与文件引用校验通过。旧 Release/标签不覆盖。重新发布全部声明平台产物成功，远程消费继续验证。
 
 HAR 的 OHPM 版本保持原版本；Registry 要求的作者 URL、仓库 URL 与安装命令已补齐（如适用）。提交已被 Registry 接受，审核中；尚不能称为上架或远程安装成功。
+
+## 2026-09-30 远程验收结果
+
+Maven `0.1.1` 已发布：[GitHub Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.1)，JitPack 状态 `ok`，独立消费的Android、iOS Simulator Framework 链接、OHOS 编译通过。 HAR `0.1.0` 已提交 OHPM 审核，尚未上架；GitHub Release HAR 已远程下载、SHA-256 校验、安装到独立工程并 assembleHar 成功。OHPM 不支持此 HAR URL 直接依赖，验收使用下载缓存的 file 依赖，不计为 Registry 安装验收。 Swift Package 从远程 Git 标签 `0.1.0` 拉取，提供官方 WechatOpenSDK-XCFramework 2.0.7 的 Simulator slice 后 xcodebuild 成功；未上传 CocoaPods Specs。
+
+本轮默认远程仓库解析，无源码 include/project 替换或 mavenLocal。Gradle 消费使用 `--rerun-tasks` 强制编译；permission、diagnostics 同时刷新依赖，其余库使用新版本首次远程解析，`--info` 留有 JitPack 下载证据。行为测试、SDK mock 与产物消费不代表真机系统页面或真实授权/支付验收。
