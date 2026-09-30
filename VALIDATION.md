@@ -44,3 +44,29 @@ Maven `0.1.1` 已发布：[GitHub Release](https://github.com/gycrosskit/wechat/
 ## 2026-09-30 OHPM 上架后验收
 
 `@gycrosskit/wechat-native@0.1.0` 已通过审核并公开列出。新建忽略目录 build/registry-har-consumer，仅以 Registry 精确版本依赖，无 file/源码路径依赖；`ohpm install --all`、`assembleHar --no-daemon` 均通过。锁文件 resolved 指向 ohpm.openharmony.cn，已核验。GitHub Release 下载缓存消费仍是另一项验收，不混记。日志 `/tmp/issues-six-wechat-registry-har.log`。未执行真机系统页面或 SDK 请求。
+
+## 2026-09-30 Issue #5 分享兼容修复候选
+
+工作目录 `/Users/guoyang/gycrosskit/.worktrees/contracts-two/wechat`，分支 `codex/wechat-share-compatibility`。宿主 `harmony-production-integration/sxmqliveAndroid` 只读对照，未修改宿主；本条记录时尚未发布本轮候选。
+
+core、Android、Swift/KMP 桥、OHOS 和 Kuikly shareImage 新增可选可信 recipientId/senderOpenId，普通三参数调用源码兼容。Android 使用原 SDK 实例、真实 scene=3 常量 WXSceneSpecifiedContact。实际 AAR bytecode/checkArgs 发现宿主原 Gateway 只设置 userOpenId，未设置必需的发送者 BaseReq.openId；宿主仍需确认可信发送者来源，缺字段返回 UNSUPPORTED，不拿目标冒充发送者。
+
+Android 指定联系人低于 Build.SEND_TO_SPECIFIED_CONTACT_SDK_INT 返回 UNSUPPORTED；大于10MiB图片要求 Build.SEND_25M_IMAGE_SDK_INT，上限为真实 SDK 25MiB。iOS 2.0.7 Header 图片上限25M、title512字节、description1K；宿主256/512字符策略按UTF-8字节收敛，不再整体拒绝合法中文。OHOS无指定联系人API；iOS无可验证专用客户端版本查询，两端明确UNSUPPORTED，未承诺指定联系人全平台兼容。
+
+iOS requestId保持nil，新增candidateRequestID与singlePending证据；一笔share等到回执，正常终态后可继续分享。SDK send失败、SDK前拒绝/取消释放槽；SDK发送后取消隔离本实例后续share（UNSUPPORTED），旧回执被忽略，不能归给新任务。OAuth可信恢复和资金回执边界保持。不同URL重复回执、跨进程迟回执不能由BaseResp准确辨认；singlePending不能当verified。同进程重建客户端不能安全解除隔离；宿主仍需评估该边界的业务可用性。
+
+| 本轮检查 | 结果与范围 |
+| --- | --- |
+| `node tests/wechat.cjs` | 通过；实际ArkTS转译代码，SDK/文件/图像mock。普通分享、指定目标拒绝不降级、25MiB/超限、ASCII/中文截断、取消迟回执、trustedStore冷启动、Kuikly dispose |
+| Swift session self-check | 通过；singlePending候选、BUSY、终态下一笔、send失败、发送前/后取消差异、受理后取消、取消迟completion/回执、早于send completion的回执、重复回执、UTF-8/emoji、原OAuth可信存储 |
+| Swift原生typecheck | 通过；arm64 iOS Simulator、真实外部SDK2.0.7 Header，包含receipt和新参数；不是设备验证 |
+| 真正Android SDK `AndroidSdkCheck.java` | 通过；SDK6.8.34 checkArgs覆盖SESSION/TIMELINE、目标/发送者必需字段、25MiB/超限，SDK ILog仅静默日志，无请求发送 |
+| Android编译与JVM targeted test | root统一构建通过；真实SDK编译，common session/content测试 |
+| HAR assemble | root统一构建通过；真实SDK1.0.23 |
+| 本地Maven staging | root统一构建通过；9个metadata/23个文件引用校验通过 |
+| 独立Gradle消费 | root统一验证Android/OHOS及真实iOS Simulator Framework链接通过；本地staging，无源码include替换 |
+| KMP Swift桥 | root对真实生成framework与SDK2.0.7 typecheck通过 |
+
+真实SDK JVM检查命令为 `java -Xverify:none -ea --class-path "build/sdk-inspect/classes.jar:<android.jar>" tests/AndroidSdkCheck.java`；classes.jar从已缓存6.8.34 AAR解包。JVM默认验证因厂商旧stackmap在Log.e报VerifyError，此独立检查明确使用-Xverify:none；SDK checkArgs本身未替换，仅ILog静默。正常Android/Kotlin构建不修改或绕过校验策略。
+
+仍未验证：微信真机版本/指定联系人UI、实际分享返回与业务任务上报、跨进程iOS迟回执、宿主可信senderOpenId来源、取消隔离对宿主页面的影响、本轮新远程Maven/Swift/OHPM版本。SDK/mock/typecheck不能代替这些验收。

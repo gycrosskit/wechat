@@ -11,11 +11,11 @@ final class KmpWechatBridge: IosWechatBridge {
                 listener.onSubmitted(requestId: id, status: Self.status(status))
             }, onReceipt: { response in
                 let kind: WechatCore.WechatKind = response.kind == .authorization ? .authorization : response.kind == .share ? .share : .merchantTransfer
-                listener.onReceipt(receipt: WechatCore.WechatReceipt(requestId: response.requestID, kind: kind, errorCode: response.errorCode, authorizationCode: response.authorizationCode, pageResult: response.pageResult))
+                listener.onReceipt(receipt: WechatCore.WechatReceipt(requestId: response.requestID, kind: kind, errorCode: response.errorCode, authorizationCode: response.authorizationCode, pageResult: response.pageResult, candidateRequestId: response.candidateRequestID, attribution: response.attribution == .verified ? .verified : response.attribution == .singlePending ? .singlePending : .unattributed))
             }, store: store)
     }
     func authorize(requestId: String) { native.authorize(requestID: requestId) }
-    func shareImage(requestId: String, data: KotlinByteArray, scene: WechatCore.WechatScene) { native.shareImage(requestID: requestId, data: Self.data(data), scene: scene == .timeline ? .timeline : .session) }
+    func shareImage(requestId: String, data: KotlinByteArray, scene: WechatCore.WechatScene, recipientId: String?, senderOpenId: String?) { native.shareImage(requestID: requestId, data: Self.data(data), scene: scene == .timeline ? .timeline : .session, recipientID: recipientId, senderOpenID: senderOpenId) }
     func shareWebPage(requestId: String, url: String, title: String, description: String, thumbnail: KotlinByteArray, scene: WechatCore.WechatScene) { native.shareWebPage(requestID: requestId, url: url, title: title, description: description, thumbnail: Self.data(thumbnail), scene: scene == .timeline ? .timeline : .session) }
     func openMerchantTransfer(requestId: String, merchantId: String, appId: String, packageValue: String) { native.openMerchantTransfer(requestID: requestId, merchantID: merchantId, appID: appId, packageValue: packageValue) }
     func cancel(requestId: String) { native.cancel(requestID: requestId) }

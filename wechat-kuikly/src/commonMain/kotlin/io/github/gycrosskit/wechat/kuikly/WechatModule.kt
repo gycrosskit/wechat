@@ -30,9 +30,9 @@ class WechatModule : Module(), WechatClient {
         }, false).callbackRef
     }
     override fun authorize(requestId: String) = call(requestId, "authorize", JSONObject())
-    override fun shareImage(requestId: String, data: ByteArray, scene: WechatScene) {
+    override fun shareImage(requestId: String, data: ByteArray, scene: WechatScene, recipientId: String?, senderOpenId: String?) {
         if (data.isEmpty() || data.size > MAX_IMAGE) { listener?.onSubmitted(requestId, WechatStatus.INVALID_CONTENT); return }
-        call(requestId, "image", JSONObject().apply { put("data", Base64.encode(data)); put("scene", sceneValue(scene)) })
+        call(requestId, "image", JSONObject().apply { put("data", Base64.encode(data)); put("scene", sceneValue(scene)); recipientId?.let { put("recipientId", it) }; senderOpenId?.let { put("senderOpenId", it) } })
     }
     override fun shareWebPage(requestId: String, url: String, title: String, description: String, thumbnail: ByteArray, scene: WechatScene) {
         if (thumbnail.isEmpty() || thumbnail.size > MAX_IMAGE) { listener?.onSubmitted(requestId, WechatStatus.INVALID_CONTENT); return }
@@ -74,5 +74,5 @@ class WechatModule : Module(), WechatClient {
         callbacks.values.forEach(::removeCallback); callbacks.clear(); listener = null
     }
     private fun sceneValue(scene: WechatScene): String = if (scene == WechatScene.TIMELINE) "timeline" else "session"
-    companion object { const val NAME = "GycWechat"; private const val MAX_IMAGE = 10 * 1024 * 1024 }
+    companion object { const val NAME = "GycWechat"; private const val MAX_IMAGE = 25 * 1024 * 1024 }
 }

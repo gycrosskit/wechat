@@ -57,3 +57,16 @@ class WechatSessionTest {
     }
 
 }
+
+class WechatShareContentTest {
+    @kotlin.test.Test fun keepsHostLimitsWithinSdkBytes() {
+        kotlin.test.assertEquals(25 * 1024 * 1024, MAX_WECHAT_IMAGE)
+        kotlin.test.assertEquals("a".repeat(256), wechatText("a".repeat(300), 256, 512))
+        kotlin.test.assertEquals("中".repeat(170), wechatText("中".repeat(256), 256, 512))
+        kotlin.test.assertEquals("文".repeat(341), wechatText("文".repeat(512), 512, 1024))
+        val emoji = wechatText("😀".repeat(300), 256, 512)
+        kotlin.test.assertTrue(emoji.encodeToByteArray().size <= 512)
+        kotlin.test.assertFalse(emoji.last().isHighSurrogate())
+        kotlin.test.assertEquals("", wechatText("", 256, 512))
+    }
+}

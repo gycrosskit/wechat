@@ -11,7 +11,7 @@ Share.WXSceneTimeline = 1; Share.WXSceneSession = 0;
 const sdk = {
  '@tencent/wechat_open_sdk': wx, '@kit.AbilityKit': {},
  '@kit.CryptoArchitectureKit': { cryptoFramework: { createRandom: () => ({ generateRandomSync: n => ({ data: Buffer.alloc(n, ++seq) }) }) } },
- '@kit.ArkTS': { util: { generateRandomUUID: () => `tx-${++seq}`, Base64Helper: class { encodeToStringSync(x) { return Buffer.from(x).toString('base64'); } decodeSync(x) { if (x === 'bad') throw Error('bad'); return new Uint8Array(Buffer.from(x, 'base64')); } } }, url: { URL } },
+ '@kit.ArkTS': { util: { TextEncoder: class { encodeInto(value) { return new Uint8Array(Buffer.from(value, 'utf8')); } }, generateRandomUUID: () => `tx-${++seq}`, Base64Helper: class { encodeToStringSync(x) { return Buffer.from(x).toString('base64'); } decodeSync(x) { if (x === 'bad') throw Error('bad'); return new Uint8Array(Buffer.from(x, 'base64')); } } }, url: { URL } },
  '@kit.CoreFileKit': { fileUri: { getUriFromPath: x => x }, fileIo: { OpenMode: { CREATE: 1, WRITE_ONLY: 2, TRUNC: 4 }, open: async p => { files.add(p); return { fd: p }; }, close: async () => {}, write: async (_fd, bytes) => { writes++; return Math.min(2, bytes.byteLength); }, unlink: async p => { files.delete(p); removed++; } } },
  '@kit.ImageKit': { image: { createImageSource: () => ({ getImageInfo: async () => ({ mimeType: 'image/png', size: { width: 800, height: 600 } }), createPixelMap: async () => ({ release: async () => released++ }), release: async () => released++ }), createImagePacker: () => ({ packing: async () => { if (packingGate) await packingGate; return new ArrayBuffer(8); }, release: async () => released++ }) } }
 };
@@ -49,7 +49,19 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  client.onResp(response(wx.SendAuthResp, slowReq, { state: slowReq.state, code: 'late' })); assert.equal(receipts.at(-1).requestId, 'new');
  assert.equal(await client.shareWebPage('url-invalid', 'javascript:alert(1)', '', '', 'aA==', 'session'), 'invalid_content');
  assert.equal(await client.shareWebPage('url-creds', 'https://user:pw@example.com', '', '', 'aA==', 'session'), 'invalid_content');
+ const sendsBeforeRecipient = sent.length;
+ assert.equal(await client.shareImage('recipient', 'aA==', 'session', 'trusted-recipient', 'trusted-sender'), 'unsupported');
+ assert.equal(await client.shareImage('recipient-timeline', 'aA==', 'timeline', 'trusted-recipient'), 'invalid_content');
+ assert.equal(sent.length, sendsBeforeRecipient);
+ assert.equal(await client.shareWebPage('chinese', 'https://example.com', '中'.repeat(256), '文'.repeat(512), 'aA==', 'session'), 'requested');
+ const chinese = sent.at(-1); assert.equal(Buffer.byteLength(chinese.message.title), 510); assert.equal(Buffer.byteLength(chinese.message.description), 1023);
+ assert.equal(chinese.message.title, '中'.repeat(170)); client.onResp(response(wx.SendMessageToWXResp, chinese));
+ assert.equal(await client.shareWebPage('ascii', 'https://example.com', 'a'.repeat(300), 'b'.repeat(600), 'aA==', 'session'), 'requested');
+ const ascii = sent.at(-1); assert.equal(ascii.message.title.length, 256); assert.equal(ascii.message.description.length, 512); client.onResp(response(wx.SendMessageToWXResp, ascii));
+ assert.equal(await client.shareImage('oversize', Buffer.alloc(25 * 1024 * 1024 + 1).toString('base64'), 'session'), 'invalid_content');
  assert.equal(await client.shareImage('image-invalid', 'bad', 'session'), 'invalid_content');
+ assert.equal(await client.shareWebPage('25m', 'https://example.com', '', '', Buffer.alloc(25 * 1024 * 1024).toString('base64'), 'session'), 'requested');
+ const largeThumb = sent.at(-1); client.onResp(response(wx.SendMessageToWXResp, largeThumb));
  assert.equal(await client.shareImage('scene-invalid', 'aA==', 'other'), 'invalid_content');
  assert.equal(await client.openMerchantTransfer('transfer', 'merchant', 'app', ' p=+&\u4e2d '), 'requested');
  const transfer = sent.at(-1); assert.equal(transfer.businessType, 'requestMerchantTransfer');
