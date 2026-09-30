@@ -12,10 +12,13 @@ public protocol WechatAuthorizationStore {
     func save(_ request: WechatPendingAuthorization?) throws
 }
 
-// 单次 SDK 发送与 OAuth 等待单独管理；分享/转账响应不具备请求标识，不能结束任何请求。
+// ponytail: 单笔本地候选无法辨认不同 URL 重复回执；需要严格证明时由宿主核验，SDK 无 transaction。
 final class WechatSession {
     private var usedIDs = Set<String>()
     private var submitting: String?
+    private var share: String?
+    private var shareDispatched = false
+    private var shareQuarantined = false
     private var authorization: WechatPendingAuthorization?
     private let store: WechatAuthorizationStore?
     private var restorationFailed = false
@@ -31,10 +34,11 @@ final class WechatSession {
         !request.requestID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && request.requestID.count <= 128 &&
             !request.state.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && request.state.count <= 256
     }
-    func begin(_ id: String, state: String? = nil) -> String? {
+    func begin(_ id: String, state: String? = nil, sharing: Bool = false) -> String? {
         guard !restorationFailed else { return "failed" }
         guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, id.count <= 128, !usedIDs.contains(id) else { return "invalid_content" }
-        guard submitting == nil, authorization == nil else { return "busy" }
+        if sharing && shareQuarantined { return "unsupported" }
+        guard submitting == nil, authorization == nil, share == nil else { return "busy" }
         usedIDs.insert(id)
         if let state {
             let request = WechatPendingAuthorization(requestID: id, state: state)
@@ -42,17 +46,25 @@ final class WechatSession {
             do { try store?.save(request) } catch { return "failed" }
             authorization = request
         }
+        if sharing { share = id; shareDispatched = false }
         submitting = id
         return nil
     }
     func submitted(_ id: String, accepted: Bool) -> Bool {
         guard submitting == id else { return false }
         submitting = nil
+        if !accepted, share == id { share = nil; shareDispatched = false }
         if !accepted, authorization?.requestID == id {
             do { try store?.save(nil) } catch { return false }
             authorization = nil
         }
         return true
+    }
+    func dispatchedShare(_ id: String) { if share == id { shareDispatched = true } }
+    func consumeShare() -> String? {
+        guard !shareQuarantined, let id = share, shareDispatched else { return nil }
+        share = nil; shareDispatched = false
+        return id
     }
     func consumeAuthorization(_ state: String?) -> String? {
         guard let auth = authorization, state == auth.state else { return nil }
@@ -61,12 +73,24 @@ final class WechatSession {
         return auth.requestID
     }
     func cancel(_ id: String) -> Bool {
-        let active = submitting == id || authorization?.requestID == id
+        let active = submitting == id || authorization?.requestID == id || share == id
         if authorization?.requestID == id {
             do { try store?.save(nil) } catch { return false }
+        }
+        if share == id {
+            // ponytail: 已交 SDK 后取消会隔离本实例分享；SDK 提供可靠标识后才能安全解除。
+            if shareDispatched { shareQuarantined = true }
+            share = nil; shareDispatched = false
         }
         if submitting == id { submitting = nil }
         if authorization?.requestID == id { authorization = nil }
         return active
     }
+}
+
+/** 先沿用宿主字符上限，再按厂商 UTF-8 字节上限截断，保留完整字符。 */
+func wechatText(_ value: String, characters: Int, bytes: Int) -> String {
+    var text = String(value.prefix(characters))
+    while text.utf8.count > bytes { text.removeLast() }
+    return text
 }

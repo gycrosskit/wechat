@@ -105,14 +105,15 @@ export class WechatClient implements wx.WXApiEventHandler {
       return await this.send(req, pending);
     } catch (_) { return this.fail(pending, 'failed'); }
   }
-  async shareImage(id: string, base64: string, scene: string): Promise<WechatStatus> {
+  async shareImage(id: string, base64: string, scene: string, recipientId?: string, _senderOpenId?: string): Promise<WechatStatus> {
     const rejected = this.begin(id, 'share'); if (rejected) { return rejected; }
     const pending = this.pending!;
-    if (!this.validScene(scene) || typeof base64 !== 'string' || !base64 || base64.length > 14 * 1024 * 1024) { return this.fail(pending, 'invalid_content'); }
+    if (recipientId !== undefined) { return this.fail(pending, typeof recipientId !== 'string' || !recipientId.trim() || scene !== 'session' ? 'invalid_content' : 'unsupported'); }
+    if (!this.validScene(scene) || typeof base64 !== 'string' || !base64 || base64.length > Math.ceil(25 * 1024 * 1024 / 3) * 4) { return this.fail(pending, 'invalid_content'); }
     let source: image.ImageSource | null = null;
     try {
       const bytes = new util.Base64Helper().decodeSync(base64);
-      if (!bytes.length || bytes.length > 10 * 1024 * 1024) { return this.fail(pending, 'invalid_content'); }
+      if (!bytes.length || bytes.length > 25 * 1024 * 1024) { return this.fail(pending, 'invalid_content'); }
       source = image.createImageSource(bytes.buffer as ArrayBuffer);
       const info = await source.getImageInfo();
       if (info.mimeType !== 'image/png' && info.mimeType !== 'image/jpeg') { return this.fail(pending, 'unsupported'); }
@@ -140,14 +141,14 @@ export class WechatClient implements wx.WXApiEventHandler {
     const pending = this.pending!;
     let source: image.ImageSource | null = null;
     try {
-      if (!this.validScene(scene) || !this.validUrl(address) || typeof title !== 'string' || typeof description !== 'string' || typeof thumbBase64 !== 'string' || !thumbBase64 || thumbBase64.length > 14 * 1024 * 1024) { return this.fail(pending, 'invalid_content'); }
+      if (!this.validScene(scene) || !this.validUrl(address) || typeof title !== 'string' || typeof description !== 'string' || typeof thumbBase64 !== 'string' || !thumbBase64 || thumbBase64.length > Math.ceil(25 * 1024 * 1024 / 3) * 4) { return this.fail(pending, 'invalid_content'); }
       const bytes = new util.Base64Helper().decodeSync(thumbBase64);
-      if (!bytes.length || bytes.length > 10 * 1024 * 1024) { return this.fail(pending, 'invalid_content'); }
+      if (!bytes.length || bytes.length > 25 * 1024 * 1024) { return this.fail(pending, 'invalid_content'); }
       source = image.createImageSource(bytes.buffer as ArrayBuffer);
       const thumb = await this.thumbnail(source);
       if (!thumb) { return this.fail(pending, 'invalid_content'); }
       const object = new wx.WXWebpageObject(); object.webpageUrl = address;
-      const message = new wx.WXMediaMessage(); message.mediaObject = object; message.title = title; message.description = description; message.thumbData = thumb;
+      const message = new wx.WXMediaMessage(); message.mediaObject = object; message.title = this.text(title, 256, 512); message.description = this.text(description, 512, 1024); message.thumbData = thumb;
       return this.sendShare(message, scene, pending);
     } catch (_) { return this.fail(pending, 'invalid_content'); }
     finally { if (source) { await source.release(); } }
@@ -215,6 +216,12 @@ export class WechatClient implements wx.WXApiEventHandler {
       typeof request.transaction === 'string' && !!request.transaction.trim() && request.transaction.length <= 128 &&
       typeof request.state === 'string' && (request.kind === 'authorization' ? !!request.state.trim() && request.state.length <= 256 :
       (request.kind === 'share' || request.kind === 'merchant_transfer') && request.state === '');
+  }
+  private text(value: string, characters: number, bytes: number): string {
+    let text = Array.from(value).slice(0, characters).join('');
+    const encoder = new util.TextEncoder();
+    while (encoder.encodeInto(text).length > bytes) { text = Array.from(text).slice(0, -1).join(''); }
+    return text;
   }
   private validScene(scene: string): boolean { return scene === 'session' || scene === 'timeline'; }
   private validUrl(address: string): boolean {

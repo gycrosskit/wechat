@@ -1,6 +1,6 @@
 import { KRAny, KuiklyRenderBaseModule, KuiklyRenderCallback } from '@kuikly-open/render';
 import { WechatClient, WechatReceipt, WechatStatus } from './WechatClient';
-interface Args { requestId: string; data: string; scene: string; url: string; title: string; description: string; thumbnail: string; merchantId: string; appId: string; packageValue: string; restoredRequestId: string; }
+interface Args { requestId: string; recipientId?: string; senderOpenId?: string; data: string; scene: string; url: string; title: string; description: string; thumbnail: string; merchantId: string; appId: string; packageValue: string; restoredRequestId: string; }
 export class WechatModule extends KuiklyRenderBaseModule {
   static readonly MODULE_NAME: string = 'GycWechat';
   private listener: KuiklyRenderCallback | null = null;
@@ -32,7 +32,7 @@ export class WechatModule extends KuiklyRenderBaseModule {
   }
   private async perform(client: WechatClient, method: string, args: Args): Promise<WechatStatus> {
     if (method === 'authorize') { return client.authorize(args.requestId); }
-    if (method === 'image') { return client.shareImage(args.requestId, args.data, args.scene); }
+    if (method === 'image') { return client.shareImage(args.requestId, args.data, args.scene, args.recipientId, args.senderOpenId); }
     if (method === 'webpage') { return client.shareWebPage(args.requestId, args.url, args.title, args.description, args.thumbnail, args.scene); }
     if (method === 'transfer') { return client.openMerchantTransfer(args.requestId, args.merchantId, args.appId, args.packageValue); }
     return 'unsupported';

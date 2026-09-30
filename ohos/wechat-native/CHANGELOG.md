@@ -1,3 +1,8 @@
+# 0.1.1
+
+- 图片输入兼容 25 MiB；网页文本按宿主字符策略与 SDK UTF-8 字节上限截断。
+- shareImage 增加可选可信 recipientId/senderOpenId；本端 SDK 缺少指定联系人 API，明确 unsupported，不降级普通好友。
+
 # 0.1.0
 
 微信授权、分享和确认页能力，回调只表示 SDK 层回执。

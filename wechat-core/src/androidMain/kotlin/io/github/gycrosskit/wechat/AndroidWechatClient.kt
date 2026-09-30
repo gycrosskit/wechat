@@ -51,23 +51,26 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         if (!begin(requestId, WechatKind.AUTHORIZATION, state)) return
         send(requestId, SendAuth.Req().apply { scope = "snsapi_userinfo"; this.state = state })
     }
-    override fun shareImage(requestId: String, data: ByteArray, scene: WechatScene) {
+    override fun shareImage(requestId: String, data: ByteArray, scene: WechatScene, recipientId: String?, senderOpenId: String?) {
         if (!begin(requestId, WechatKind.SHARE)) return
-        if (data.isEmpty() || data.size > MAX_IMAGE) { fail(requestId, WechatStatus.INVALID_CONTENT); return }
+        if (recipientId != null && (recipientId.isBlank() || scene != WechatScene.SESSION)) { fail(requestId, WechatStatus.INVALID_CONTENT); return }
+        if (recipientId != null && (api.wxAppSupportAPI < Build.SEND_TO_SPECIFIED_CONTACT_SDK_INT || senderOpenId.isNullOrBlank())) { fail(requestId, WechatStatus.UNSUPPORTED); return }
+        if (data.isEmpty() || data.size > MAX_WECHAT_IMAGE) { fail(requestId, WechatStatus.INVALID_CONTENT); return }
+        if (data.size > 10 * 1024 * 1024 && api.wxAppSupportAPI < Build.SEND_25M_IMAGE_SDK_INT) { fail(requestId, WechatStatus.UNSUPPORTED); return }
         val copy = data.copyOf()
         images.execute {
             val thumb = runCatching { thumbnail(copy) }.getOrNull()
             main.post {
                 if (!session.isCurrent(requestId)) return@post
                 if (thumb == null) { fail(requestId, WechatStatus.INVALID_CONTENT); return@post }
-                sendShare(requestId, WXMediaMessage(WXImageObject(copy)).apply { thumbData = thumb }, scene)
+                sendShare(requestId, WXMediaMessage(WXImageObject(copy)).apply { thumbData = thumb }, scene, recipientId, senderOpenId)
             }
         }
     }
     override fun shareWebPage(requestId: String, url: String, title: String, description: String, thumbnail: ByteArray, scene: WechatScene) {
         if (!begin(requestId, WechatKind.SHARE)) return
         val uri = runCatching { Uri.parse(url) }.getOrNull()
-        if (uri == null || uri.scheme?.lowercase() !in listOf("http", "https") || uri.host.isNullOrBlank() || uri.userInfo != null || url.toByteArray().size > 10 * 1024 || thumbnail.isEmpty() || thumbnail.size > MAX_IMAGE) {
+        if (uri == null || uri.scheme?.lowercase() !in listOf("http", "https") || uri.host.isNullOrBlank() || uri.userInfo != null || url.toByteArray().size > 10 * 1024 || thumbnail.isEmpty() || thumbnail.size > MAX_WECHAT_IMAGE) {
             fail(requestId, WechatStatus.INVALID_CONTENT); return
         }
         val copy = thumbnail.copyOf()
@@ -77,7 +80,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
                 if (!session.isCurrent(requestId)) return@post
                 if (thumb == null) { fail(requestId, WechatStatus.INVALID_CONTENT); return@post }
                 sendShare(requestId, WXMediaMessage(WXWebpageObject().apply { webpageUrl = url }).apply {
-                    this.title = title; this.description = description; thumbData = thumb
+                    this.title = wechatText(title, 256, 512); this.description = wechatText(description, 512, 1024); thumbData = thumb
                 }, scene)
             }
         }
@@ -128,9 +131,18 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         if (!api.isWXAppInstalled) { fail(id, WechatStatus.NOT_INSTALLED); return false }
         return true
     }
-    private fun sendShare(id: String, message: WXMediaMessage, scene: WechatScene) {
+    private fun sendShare(id: String, message: WXMediaMessage, scene: WechatScene, recipientId: String? = null, senderOpenId: String? = null) {
         if (scene == WechatScene.TIMELINE && api.wxAppSupportAPI < Build.TIMELINE_SUPPORTED_SDK_INT) { fail(id, WechatStatus.UNSUPPORTED); return }
-        send(id, SendMessageToWX.Req().apply { this.message = message; this.scene = if (scene == WechatScene.TIMELINE) SendMessageToWX.Req.WXSceneTimeline else SendMessageToWX.Req.WXSceneSession })
+        send(id, SendMessageToWX.Req().apply {
+            this.message = message
+            this.scene = when {
+                recipientId != null -> SendMessageToWX.Req.WXSceneSpecifiedContact
+                scene == WechatScene.TIMELINE -> SendMessageToWX.Req.WXSceneTimeline
+                else -> SendMessageToWX.Req.WXSceneSession
+            }
+            userOpenId = recipientId
+            if (recipientId != null) openId = senderOpenId
+        })
     }
     private fun send(id: String, request: BaseReq) {
         request.transaction = transaction
@@ -156,5 +168,4 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
             return null
         } finally { image.recycle() }
     }
-    private companion object { const val MAX_IMAGE = 10 * 1024 * 1024 }
 }
