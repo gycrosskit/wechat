@@ -2,7 +2,7 @@
 
 微信 SDK 的 OAuth 授权、图片/网页分享和商家转账确认页入口，提供请求受理状态与 SDK 回执。账号换票、分享任务、订单查询及凭据由宿主负责；转账页面 `success` 不表示资金到账。
 
-本轮 Maven / Swift Package / Git Pod / HAR 候选为 **0.1.3**。版本匹配与真实远程消费分别记录；旧 HAR **0.1.1** 已正式上架，不能以旧 Registry 代替候选 pending 存储 API。
+本轮 Maven / Swift Package / Git Pod / HAR 预发布为 **0.1.3**。实际远程消费见[闭合验收](docs/远程闭合验收.md)；旧 HAR **0.1.1** 已正式上架，不能以旧 Registry 代替候选 pending 存储 API。
 
 ## 支持范围
 
@@ -44,7 +44,7 @@ pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag 
 
 Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，精确版本 `0.1.3`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，未发布到 CocoaPods Specs。
 
-HarmonyOS 安装独立原生包：
+HarmonyOS 新版仍在 OHPM `next` 审核，精确 Registry 安装尚未通过；以下命令仅在审核上架后使用。审核期间可按 Release SHA 固定下载独立原生包：
 
 ```sh
 ohpm install @gycrosskit/wechat-native@0.1.3
