@@ -1,3 +1,7 @@
+# 0.1.4
+
+- 取消等待原生持久清除确认；失败保留 owner/可信 pending，受理后的清理异常不宣告原请求失败。
+
 # 0.1.3
 
 - 提供同步 Preferences pending store，保留旧 namespace/pending 字段；业务恢复判断仍由宿主注入。

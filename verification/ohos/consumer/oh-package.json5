@@ -1,1 +1,1 @@
-{"name":"wechat-local-consumer","version":"0.1.0","main":"Index.ets","dependencies":{"@gycrosskit/wechat-native":"file:../../../ohos/wechat-native/build/default/outputs/default/WechatNative.har"}}
+{"name":"wechat-consumer","version":"0.1.4","main":"Index.ets","dependencies":{"@gycrosskit/wechat-native":"0.1.4"}}

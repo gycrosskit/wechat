@@ -20,6 +20,8 @@ kotlin {
 
         }
         commonTest.dependencies { implementation(kotlin("test")) }
+        // JVM 测试用薄 Kuikly transport stub 执行实际 Module，避免复制取消协议。
+        jvmTest { kotlin.srcDir(rootProject.file("wechat-kuikly/src/commonMain/kotlin")) }
     }
 }
 

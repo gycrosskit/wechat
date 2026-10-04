@@ -56,6 +56,36 @@ class WechatSessionTest {
         assertNotNull(session.consume("one-tx", WechatKind.SHARE))
     }
 
+    @Test fun failedCancelKeepsTrustedPendingForLateReceiptOrRetry() {
+        val store = object : WechatRequestStore {
+            var saved: WechatPendingRequest? = null
+            var failClear = false
+            override fun load() = saved
+            override fun save(request: WechatPendingRequest?) {
+                check(request != null || !failClear)
+                saved = request
+            }
+        }
+        val session = WechatSession(store)
+        assertNull(session.begin("late", "late-tx", WechatKind.AUTHORIZATION, "state"))
+        store.failClear = true
+        assertFalse(session.cancel("unknown"))
+        assertFails { session.cancel("late") }
+        assertTrue(session.isCurrent("late"))
+        assertEquals("late", store.saved?.requestId)
+        assertEquals(WechatStatus.BUSY, session.begin("new", "new-tx", WechatKind.SHARE))
+        store.failClear = false
+        assertEquals("late", session.consume("late-tx", WechatKind.AUTHORIZATION, "state")?.requestId)
+        assertFalse(session.cancel("late"))
+        assertNull(session.begin("retry", "retry-tx", WechatKind.SHARE))
+        store.failClear = true
+        assertFails { session.cancel("retry") }
+        store.failClear = false
+        assertTrue(session.cancel("retry"))
+        assertNull(store.saved)
+        assertNull(session.consume("retry-tx", WechatKind.SHARE))
+    }
+
 }
 
 class WechatShareContentTest {

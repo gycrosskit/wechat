@@ -42,6 +42,36 @@ final class UnreadableStore: WechatAuthorizationStore {
 }
 assert(WechatSession(store: UnreadableStore()).begin("blocked", state: "state") == "failed")
 
+final class FailingClearStore: WechatAuthorizationStore {
+    var saved: WechatPendingAuthorization?
+    var failClear = false
+    func load() -> WechatPendingAuthorization? { saved }
+    func save(_ request: WechatPendingAuthorization?) throws {
+        if request == nil && failClear { throw NSError(domain: "storage", code: 2) }
+        saved = request
+    }
+}
+let failingStore = FailingClearStore()
+let failedCancel = WechatSession(store: failingStore)
+assert(failedCancel.begin("late-after-failed-cancel", state: "late-state") == nil)
+assert(failedCancel.submitted("late-after-failed-cancel", accepted: true))
+failingStore.failClear = true
+assert(!failedCancel.cancel("unknown"))
+assert(!failedCancel.cancel("late-after-failed-cancel"))
+assert(failingStore.saved?.requestID == "late-after-failed-cancel")
+assert(failedCancel.begin("new", state: "new-state") == "busy")
+failingStore.failClear = false
+assert(failedCancel.consumeAuthorization("late-state") == "late-after-failed-cancel")
+assert(!failedCancel.cancel("late-after-failed-cancel"))
+assert(failedCancel.begin("cancel-retry", state: "retry-state") == nil)
+failingStore.failClear = true
+assert(!failedCancel.cancel("cancel-retry"))
+failingStore.failClear = false
+assert(failedCancel.cancel("cancel-retry"))
+assert(failingStore.saved == nil)
+assert(failedCancel.consumeAuthorization("retry-state") == nil)
+print("Swift failed cancel retains trusted pending, late receipt, unknown/completed ID and retry checks passed")
+
 let shares = WechatSession()
 assert(shares.begin("share-one", sharing: true) == nil)
 assert(shares.begin("share-overlap", sharing: true) == "busy")
