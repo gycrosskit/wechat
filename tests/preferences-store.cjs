@@ -3,13 +3,14 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require(process.env.TYPESCRIPT_PATH || '/Applications/DevEco-Studio.app/Contents/tools/hvigor/hvigor/node_modules/typescript');
 const stores = new Map();
-let flushes = 0, failFlush = false;
+let flushes = 0, failFlush = false, failRollback = false;
+const flushError = Error('disk unavailable');
 const preferences = { getPreferencesSync(_context, { name }) {
   if (!stores.has(name)) stores.set(name, new Map());
   const values = stores.get(name);
   return { getSync: (key, fallback) => values.get(key) ?? fallback,
-    putSync: (key, value) => values.set(key, value), deleteSync: key => values.delete(key),
-    flushSync() { flushes++; if (failFlush) throw Error('disk unavailable'); } };
+    putSync: (key, value) => { if (failRollback) throw Error('cache rollback unavailable'); values.set(key, value); }, deleteSync: key => values.delete(key),
+    flushSync() { flushes++; if (failFlush) throw flushError; } };
 } };
 const source = fs.readFileSync(`${__dirname}/../ohos/wechat-native/src/main/ets/WechatPreferencesRequestStore.ets`, 'utf8');
 const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
@@ -30,10 +31,17 @@ assert.equal(new Store('other-app', {}).load(), null);
 assert.equal(new Store('app', {}, 'old_namespace').load(), null);
 failFlush = true;
 assert.throws(() => store.save(request), /disk unavailable/);
+assert.equal(store.load().requestId, 'request-2');
 assert.throws(() => store.save(null), /disk unavailable/);
+assert.equal(new Store('app', {}).load().requestId, 'request-2');
 failFlush = false;
 store.save(null);
 assert.equal(new Store('app', {}).load(), null);
+store.save(request);
+// 二次回滚错误不能盖掉原始 flush 错误；异常不证明磁盘肯定未写。
+failFlush = true; failRollback = true;
+assert.throws(() => store.save(null), error => error === flushError);
+failFlush = false; failRollback = false;
 assert.throws(() => new Store('', {}), /configuration missing/);
 stores.get('wechat_pending_app').set('pending', '{bad JSON');
 assert.throws(() => store.load(), error => error.name === 'SyntaxError');

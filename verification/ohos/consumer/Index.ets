@@ -4,6 +4,7 @@ import { common, Want } from '@kit.AbilityKit';
 export function probe(context: common.UIAbilityContext, want: Want): WechatClient {
   const client = WechatClient.configure('host-app-id', context, new WechatPreferencesRequestStore('host-app-id', context));
   client.addListener((receipt: WechatReceipt): void => {});
+  const cancelled: boolean = client.cancel("compile-only-id");
   return client;
 }
 export { WechatModule };

@@ -2,7 +2,7 @@
 
 微信 SDK 的 OAuth 授权、图片/网页分享和商家转账确认页入口，提供请求受理状态与 SDK 回执。账号换票、分享任务、订单查询及凭据由宿主负责；转账页面 `success` 不表示资金到账。
 
-本轮 Maven / Swift Package / Git Pod / HAR 预发布为 **0.1.3**。实际远程消费见[闭合验收](docs/远程闭合验收.md)；旧 HAR **0.1.1** 已正式上架，不能以旧 Registry 代替候选 pending 存储 API。
+本轮 Maven 与 HAR 候选为 **0.1.4**，取消确认协议必须同版配套；发布和真实远程验收尚待完成。Swift Package / Git Pod 原生源码未变，继续使用已验 **0.1.3**。历史结果见[闭合验收](docs/远程闭合验收.md)；旧 HAR **0.1.1** 不含新协议。
 
 ## 支持范围
 
@@ -31,9 +31,9 @@ dependencyResolutionManagement {
     }
 }
 // commonMain.dependencies
-implementation("com.github.gycrosskit.wechat:wechat-core:0.1.3")
+implementation("com.github.gycrosskit.wechat:wechat-core:0.1.4")
 // OHOS Kuikly 宿主额外添加：
-implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.3")
+implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.4")
 ```
 
 iOS 选择 Git Pod，或 Xcode 的 Swift Package：
@@ -44,13 +44,13 @@ pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag 
 
 Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，精确版本 `0.1.3`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，未发布到 CocoaPods Specs。
 
-HarmonyOS 新版仍在 OHPM `next` 审核，精确 Registry 安装尚未通过；以下命令仅在审核上架后使用。审核期间可按 Release SHA 固定下载独立原生包：
+HarmonyOS 0.1.4 尚待提交 OHPM `next`；精确 Registry 安装尚未通过。以下命令仅在审核上架后使用。审核期间可按 Release SHA 固定下载独立原生包：
 
 ```sh
-ohpm install @gycrosskit/wechat-native@0.1.3
+ohpm install @gycrosskit/wechat-native@0.1.4
 ```
 
-[Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.3) 同时提供 `WechatNative.har` 和 SHA-256，供校验及文件依赖使用；不要以旧 0.1.0 替代新增 API。
+候选发布后，[Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.4) 将提供 `WechatNative.har` 和 SHA-256，供校验及文件依赖使用；不要以旧 0.1.0 替代新增 API。
 
 ## 最小接入
 

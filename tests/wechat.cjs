@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require(process.env.TYPESCRIPT_PATH || '/Applications/DevEco-Studio.app/Contents/tools/hvigor/hvigor/node_modules/typescript');
-let seq = 0, installed = true, accepted = true, pendingSend, packingGate, sent = [], files = new Set(), removed = 0, released = 0, writes = 0;
+let seq = 0, installed = true, accepted = true, pendingSend, packingGate, failSourceRelease = false, sent = [], files = new Set(), removed = 0, released = 0, writes = 0;
 class Base { checkArgs() { return true; } }
 class Auth extends Base {} class Share extends Base {} class Transfer extends Base {}
 const wx = { BaseReq: Base, SendAuthReq: Auth, SendAuthResp: class {}, SendMessageToWXReq: Share, SendMessageToWXResp: class {}, OpenBusinessViewReq: Transfer, OpenBusinessViewResp: class {}, WXImageObject: class {}, WXWebpageObject: class {}, WXMediaMessage: class {}, Log: { setLogImpl() {} },
@@ -13,7 +13,7 @@ const sdk = {
  '@kit.CryptoArchitectureKit': { cryptoFramework: { createRandom: () => ({ generateRandomSync: n => ({ data: Buffer.alloc(n, ++seq) }) }) } },
  '@kit.ArkTS': { util: { TextEncoder: class { encodeInto(value) { return new Uint8Array(Buffer.from(value, 'utf8')); } }, generateRandomUUID: () => `tx-${++seq}`, Base64Helper: class { encodeToStringSync(x) { return Buffer.from(x).toString('base64'); } decodeSync(x) { if (x === 'bad') throw Error('bad'); return new Uint8Array(Buffer.from(x, 'base64')); } } }, url: { URL } },
  '@kit.CoreFileKit': { fileUri: { getUriFromPath: x => x }, fileIo: { OpenMode: { CREATE: 1, WRITE_ONLY: 2, TRUNC: 4 }, open: async p => { files.add(p); return { fd: p }; }, close: async () => {}, write: async (_fd, bytes) => { writes++; return Math.min(2, bytes.byteLength); }, unlink: async p => { files.delete(p); removed++; } } },
- '@kit.ImageKit': { image: { createImageSource: () => ({ getImageInfo: async () => ({ mimeType: 'image/png', size: { width: 800, height: 600 } }), createPixelMap: async () => ({ release: async () => released++ }), release: async () => released++ }), createImagePacker: () => ({ packing: async () => { if (packingGate) await packingGate; return new ArrayBuffer(8); }, release: async () => released++ }) } }
+ '@kit.ImageKit': { image: { createImageSource: () => ({ getImageInfo: async () => ({ mimeType: 'image/png', size: { width: 800, height: 600 } }), createPixelMap: async () => ({ release: async () => released++ }), release: async () => { released++; if (failSourceRelease) throw Error('release failed'); } }), createImagePacker: () => ({ packing: async () => { if (packingGate) await packingGate; return new ArrayBuffer(8); }, release: async () => released++ }) } }
 };
 const source = fs.readFileSync(`${__dirname}/../ohos/wechat-native/src/main/ets/WechatClient.ets`, 'utf8');
 const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
@@ -93,7 +93,7 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  assert.equal(saved, null);
  const moduleSource = fs.readFileSync(`${__dirname}/../ohos/wechat-native/src/main/ets/WechatModule.ets`, 'utf8');
  const moduleOutput = ts.transpileModule(moduleSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
- const render = { KuiklyRenderBaseModule: class { onDestroy() {} } };
+ const render = { KuiklyRenderBaseModule: class { onDestroy() { this.baseDestroyed = true; } } };
  const moduleExports = { exports: {} };
  vm.runInNewContext(moduleOutput, { exports: moduleExports.exports, require: key => key === './WechatClient' ? { WechatClient: Second } : render, Set });
  const unrelated = new moduleExports.exports.WechatModule(); const wrongPage = [];
@@ -130,6 +130,61 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  assert.equal(await second.authorize('disposed-page'), 'requested'); const disposedReq = sent.at(-1);
  const ownedPage = new moduleExports.exports.WechatModule(); ownedPage.call('listen', JSON.stringify({ restoredRequestId: 'disposed-page' }), () => assert.fail('disposed page receipt'));
  ownedPage.onDestroy(); assert.equal(saved, null); second.handleWant({ verified: true, response: response(wx.SendAuthResp, disposedReq, { state: disposedReq.state, code: 'late' }) });
+ // 实际 ArkTS Module -> Client 取消桥：失败不释放 owner，不宣告 CANCELLED。
+ const CancelClient = fresh(); let cancelSaved = null, failClear = false;
+ const cancelClient = CancelClient.configure('host-app-id', { cacheDir: '/tmp' }, {
+  load: () => cancelSaved,
+  save: value => { if (!value && failClear) throw Error('disk unavailable'); cancelSaved = value ? { ...value } : null; }
+ });
+ const cancelModule = { exports: {} };
+ vm.runInNewContext(moduleOutput, { exports: cancelModule.exports, require: key => key === './WechatClient' ? { WechatClient: CancelClient } : render, Set });
+ const cancelPage = new cancelModule.exports.WechatModule(); const cancelReceipts = [], cancelAcks = [], submissions = [];
+ cancelPage.call('listen', '{}', value => cancelReceipts.push(value));
+ const callCancel = id => cancelPage.call('cancel', JSON.stringify({ requestId: id }), value => cancelAcks.push(value.status));
+ cancelPage.call('authorize', JSON.stringify({ requestId: 'cancel-fails-late-receipt' }), value => submissions.push(value.status)); await flush();
+ const cancelReq = sent.at(-1); assert.equal(submissions.at(-1), 'requested');
+ failClear = true; callCancel('cancel-fails-late-receipt'); assert.equal(cancelAcks.at(-1), 'failed');
+ assert.equal(cancelSaved.requestId, 'cancel-fails-late-receipt'); assert.equal(cancelClient.canResume('cancel-fails-late-receipt'), true);
+ callCancel('unknown'); assert.equal(cancelAcks.at(-1), 'no_pending');
+ const foreignPage = new cancelModule.exports.WechatModule(); foreignPage.call('listen', '{}', () => assert.fail('foreign receipt'));
+ foreignPage.call('cancel', JSON.stringify({ requestId: 'cancel-fails-late-receipt' }), value => assert.equal(value.status, 'no_pending'));
+ assert.equal(await cancelClient.authorize('still-busy'), 'busy');
+ failClear = false;
+ cancelClient.handleWant({ verified: true, response: response(wx.SendAuthResp, cancelReq, { state: cancelReq.state, code: 'late-but-owned' }) });
+ assert.equal(cancelReceipts.length, 1); assert.equal(cancelReceipts[0].requestId, 'cancel-fails-late-receipt');
+ callCancel('cancel-fails-late-receipt'); assert.equal(cancelAcks.at(-1), 'no_pending');
+ cancelPage.call('authorize', JSON.stringify({ requestId: 'cancel-retry' }), value => submissions.push(value.status)); await flush();
+ const retryReq = sent.at(-1); failClear = true; callCancel('cancel-retry'); assert.equal(cancelAcks.at(-1), 'failed');
+ failClear = false; callCancel('cancel-retry'); assert.equal(cancelAcks.at(-1), 'cancelled'); assert.equal(cancelSaved, null);
+ callCancel('cancel-retry'); assert.equal(cancelAcks.at(-1), 'no_pending');
+ cancelClient.handleWant({ verified: true, response: response(wx.SendAuthResp, retryReq, { state: retryReq.state, code: 'cancelled-late' }) });
+ assert.equal(cancelReceipts.length, 1);
+ // 发送尚未返回时成功取消，旧 perform 不得再产生第二个 CANCELLED 或 REQUESTED。
+ accepted = 'delay'; const beforeSubmit = submissions.length;
+ cancelPage.call('authorize', JSON.stringify({ requestId: 'cancel-before-submit-ack' }), value => submissions.push(value.status));
+ await flush(); callCancel('cancel-before-submit-ack'); assert.equal(cancelAcks.at(-1), 'cancelled');
+ pendingSend(true); await flush(); assert.equal(submissions.length, beforeSubmit); accepted = true;
+ failSourceRelease = true;
+ cancelPage.call('image', JSON.stringify({ requestId: 'accepted-release-failure', data: 'aGVsbG8=', scene: 'session' }), value => submissions.push(value.status));
+ await new Promise(resolve => setImmediate(resolve)); failSourceRelease = false;
+ const releaseReq = sent.at(-1); assert.equal(submissions.at(-1), 'pending');
+ assert.equal(cancelSaved.requestId, 'accepted-release-failure');
+ cancelClient.handleWant({ verified: true, response: response(wx.SendMessageToWXResp, releaseReq) });
+ await flush(); assert.equal(cancelReceipts.at(-1).requestId, 'accepted-release-failure'); assert.equal(cancelSaved, null);
+ cancelPage.call('authorize', JSON.stringify({ requestId: 'destroy-clear-failure' }), value => submissions.push(value.status)); await flush();
+ const destroyReq = sent.at(-1); failClear = true;
+ assert.throws(() => cancelPage.onDestroy(), /disk unavailable/);
+ assert.equal(cancelPage.baseDestroyed, true);
+ assert.equal(cancelClient.canResume('destroy-clear-failure'), true);
+ assert.equal(cancelSaved.requestId, 'destroy-clear-failure');
+ failClear = false;
+ const restoredPage = new cancelModule.exports.WechatModule(); const restoredReceipts = [];
+ restoredPage.call('listen', JSON.stringify({ restoredRequestId: 'destroy-clear-failure' }), value => restoredReceipts.push(value));
+ cancelClient.handleWant({ verified: true, response: response(wx.SendAuthResp, destroyReq, { state: destroyReq.state, code: 'restored' }) });
+ assert.equal(restoredReceipts.length, 1); assert.equal(restoredReceipts[0].requestId, 'destroy-clear-failure');
+ assert.equal(cancelReceipts.length, 2, 'destroyed owner cannot receive the restored receipt');
+ restoredPage.onDestroy(); foreignPage.onDestroy();
+ console.log('Real OHOS cancel bridge: failed clear retains owner, late receipt, unknown/foreign/completed ID, retry and late submission ack passed');
  console.log('OHOS cold process, SDK verification, trusted journal, late Kuikly listener, cancellation and replay checks passed');
  console.log('OHOS OAuth state, transaction, duplicate/late callbacks, concurrency, raw transfer encoding, URL validation and temporary file lifecycle passed');
 })().catch(e => { console.error(e); process.exitCode = 1; });

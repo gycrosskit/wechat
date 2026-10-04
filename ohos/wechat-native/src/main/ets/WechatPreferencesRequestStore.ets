@@ -17,8 +17,18 @@ export class WechatPreferencesRequestStore implements WechatRequestStore {
   }
 
   save(request: WechatPendingRequest | null): void {
-    if (request) this.storage.putSync('pending', JSON.stringify(request));
-    else this.storage.deleteSync('pending');
-    this.storage.flushSync();
+    const previous = this.storage.getSync('pending', '') as string;
+    try {
+      if (request) this.storage.putSync('pending', JSON.stringify(request));
+      else this.storage.deleteSync('pending');
+      this.storage.flushSync();
+    } catch (error) {
+      // Preferences 先改缓存再 flush；失败不能让同进程恢复误认 journal 已清除。
+      try {
+        if (previous) this.storage.putSync('pending', previous);
+        else this.storage.deleteSync('pending');
+      } catch (_) { /* 保留导致持久化失败的原始异常。 */ }
+      throw error as Error;
+    }
   }
 }

@@ -21,13 +21,31 @@ export class WechatModule extends KuiklyRenderBaseModule {
     let args: Args;
     try { args = JSON.parse(typeof params === 'string' ? params : '{}') as Args; } catch (_) { callback?.({ status: 'invalid_content' }); return null; }
     if (!args || typeof args.requestId !== 'string') { callback?.({ status: 'invalid_content' }); return null; }
-    if (method === 'cancel') { client.cancel(args.requestId); this.ids.delete(args.requestId); return null; }
+    if (method === 'cancel') {
+      if (!this.ids.has(args.requestId)) { callback?.({ status: 'no_pending' }); return null; }
+      try {
+        const cancelled = client.cancel(args.requestId);
+        this.ids.delete(args.requestId);
+        callback?.({ status: cancelled ? 'cancelled' : 'no_pending' });
+      } catch (_) {
+        // 清除持久记录失败时保留 owner；迟回执和下一次取消仍属于同一请求。
+        callback?.({ status: 'failed' });
+      }
+      return null;
+    }
     if (this.ids.has(args.requestId)) { callback?.({ status: 'busy' }); return null; }
     this.ids.add(args.requestId);
     this.perform(client, method, args).then((status: WechatStatus) => {
+      if (!this.ids.has(args.requestId)) { return; }
       if (status !== 'requested') { this.ids.delete(args.requestId); }
       if (!this.destroyed) { callback?.({ status }); }
-    }).catch(() => { this.ids.delete(args.requestId); if (!this.destroyed) { callback?.({ status: 'failed' }); } });
+    }).catch(() => {
+      if (!this.ids.has(args.requestId)) { return; }
+      const pending = client.canResume(args.requestId);
+      if (!pending) { this.ids.delete(args.requestId); }
+      // SDK 发送后的资源释放也可能抛错；可信 pending 仍在时不能伪造提交终态。
+      if (!this.destroyed) { callback?.({ status: pending ? 'pending' : 'failed' }); }
+    });
     return null;
   }
   private async perform(client: WechatClient, method: string, args: Args): Promise<WechatStatus> {
@@ -43,5 +61,8 @@ export class WechatModule extends KuiklyRenderBaseModule {
     client?.removeListener(this.response); this.listener = null;
     ids.forEach((id: string) => client?.cancel(id));
   }
-  onDestroy(): void { this.destroyed = true; this.release(); super.onDestroy(); }
+  onDestroy(): void {
+    this.destroyed = true;
+    try { this.release(); } finally { super.onDestroy(); }
+  }
 }

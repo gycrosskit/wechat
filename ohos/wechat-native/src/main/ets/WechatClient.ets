@@ -161,12 +161,13 @@ export class WechatClient implements wx.WXApiEventHandler {
     req.query = `mchId=${this.encode(merchantId)}&appId=${this.encode(appId)}&package=${this.encode(packageValue)}`;
     return this.send(req, pending);
   }
-  cancel(id: string): void {
+  cancel(id: string): boolean {
     this.receipts = this.receipts.filter((receipt: WechatReceipt) => receipt.requestId !== id);
     const pending = this.pending;
-    if (!pending || pending.id !== id) { return; }
+    if (!pending || pending.id !== id) { return false; }
     this.store?.save(null);
     pending.cancelled = true; this.pending = null; this.removeFile(pending.path);
+    return true;
   }
   private begin(id: string, kind: string): WechatStatus | null {
     if (typeof id !== 'string' || !id.trim() || id.length > 128 || this.usedIds.has(id)) { return 'invalid_content'; }

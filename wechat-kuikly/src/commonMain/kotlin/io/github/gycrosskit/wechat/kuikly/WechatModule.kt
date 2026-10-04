@@ -12,6 +12,7 @@ class WechatModule : Module(), WechatClient {
     private var listener: WechatListener? = null
     private var listening: CallbackRef? = null
     private val callbacks = mutableMapOf<String, CallbackRef>()
+    private val cancellations = mutableMapOf<String, CallbackRef>()
     private var disposed = false
     override fun moduleName(): String = NAME
     fun attach(listener: WechatListener, restoredRequestId: String? = null) {
@@ -41,9 +42,18 @@ class WechatModule : Module(), WechatClient {
     override fun openMerchantTransfer(requestId: String, merchantId: String, appId: String, packageValue: String) =
         call(requestId, "transfer", JSONObject().apply { put("merchantId", merchantId); put("appId", appId); put("packageValue", packageValue) })
     override fun cancel(requestId: String) {
-        callbacks.remove(requestId)?.let(::removeCallback)
-        toNative(false, "cancel", JSONObject().apply { put("requestId", requestId) }.toString(), null, false)
-        listener?.onSubmitted(requestId, WechatStatus.CANCELLED)
+        if (disposed || listening == null || cancellations.containsKey(requestId)) return
+        var completed = false
+        val ref = toNative(false, "cancel", JSONObject().apply { put("requestId", requestId) }.toString(), { payload ->
+            completed = true
+            cancellations.remove(requestId)
+            // 取消失败不是原请求提交失败；原 pending 和迟回执仍由同一 owner 接收。
+            if (!disposed && payload?.optString("status") == "cancelled") {
+                callbacks.remove(requestId)?.let(::removeCallback)
+                listener?.onSubmitted(requestId, WechatStatus.CANCELLED)
+            }
+        }, false).callbackRef
+        if (!completed && ref != null) cancellations[requestId] = ref
     }
     private fun call(id: String, method: String, args: JSONObject) {
         if (disposed) { listener?.onSubmitted(id, WechatStatus.CANCELLED); return }
@@ -60,9 +70,10 @@ class WechatModule : Module(), WechatClient {
                 "unsupported" -> WechatStatus.UNSUPPORTED
                 "invalid_content" -> WechatStatus.INVALID_CONTENT
                 "cancelled" -> WechatStatus.CANCELLED
+                "pending" -> null
                 else -> WechatStatus.FAILED
             }
-            if (!disposed) listener?.onSubmitted(id, status)
+            if (!disposed && status != null) listener?.onSubmitted(id, status)
         }, false).callbackRef
         if (!completed && ref != null) callbacks[id] = ref
     }
@@ -72,6 +83,7 @@ class WechatModule : Module(), WechatClient {
         toNative(false, "unlisten", "{}", null, false)
         listening?.let(::removeCallback); listening = null
         callbacks.values.forEach(::removeCallback); callbacks.clear(); listener = null
+        cancellations.values.forEach(::removeCallback); cancellations.clear()
     }
     private fun sceneValue(scene: WechatScene): String = if (scene == WechatScene.TIMELINE) "timeline" else "session"
     companion object { const val NAME = "GycWechat"; private const val MAX_IMAGE = 25 * 1024 * 1024 }
