@@ -1,3 +1,7 @@
+# 0.1.3
+
+- 提供同步 Preferences pending store，保留旧 namespace/pending 字段；业务恢复判断仍由宿主注入。
+
 # 0.1.1
 
 - 图片输入兼容 25 MiB；网页文本按宿主字符策略与 SDK UTF-8 字节上限截断。

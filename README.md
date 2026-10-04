@@ -2,7 +2,7 @@
 
 微信 SDK 的 OAuth 授权、图片/网页分享和商家转账确认页入口，提供请求受理状态与 SDK 回执。账号换票、分享任务、订单查询及凭据由宿主负责；转账页面 `success` 不表示资金到账。
 
-当前 KMP、Swift Package / Git Pod 版本为 **0.1.2**，见 [Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.2)。HAR **0.1.1** 已正式上架 OHPM，并提供 Release 下载；旧 **0.1.0** 不包含新增指定联系人字段。
+本轮 Maven / Swift Package / Git Pod / HAR 候选为 **0.1.3**。版本匹配与真实远程消费分别记录；旧 HAR **0.1.1** 已正式上架，不能以旧 Registry 代替候选 pending 存储 API。
 
 ## 支持范围
 
@@ -31,26 +31,26 @@ dependencyResolutionManagement {
     }
 }
 // commonMain.dependencies
-implementation("com.github.gycrosskit.wechat:wechat-core:0.1.2")
+implementation("com.github.gycrosskit.wechat:wechat-core:0.1.3")
 // OHOS Kuikly 宿主额外添加：
-implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.2")
+implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.3")
 ```
 
 iOS 选择 Git Pod，或 Xcode 的 Swift Package：
 
 ```ruby
-pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => '0.1.2'
+pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => '0.1.3'
 ```
 
-Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，精确版本 `0.1.2`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，未发布到 CocoaPods Specs。
+Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，精确版本 `0.1.3`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，未发布到 CocoaPods Specs。
 
 HarmonyOS 安装独立原生包：
 
 ```sh
-ohpm install @gycrosskit/wechat-native@0.1.1
+ohpm install @gycrosskit/wechat-native@0.1.3
 ```
 
-[Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.2) 同时提供 `WechatNative.har` 和 SHA-256，供校验及文件依赖使用；不要以旧 0.1.0 替代新增 API。
+[Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.3) 同时提供 `WechatNative.har` 和 SHA-256，供校验及文件依赖使用；不要以旧 0.1.0 替代新增 API。
 
 ## 最小接入
 
@@ -89,3 +89,16 @@ OHOS 在 EntryAbility 配置 `WechatClient.configure(appId, context, trustedStor
 - [Releases](https://github.com/gycrosskit/wechat/releases) · [Issues](https://github.com/gycrosskit/wechat/issues)：附版本、平台和脱敏复现步骤。
 
 由 GY CrossKit 维护，采用 [Apache-2.0](LICENSE)；厂商 SDK 适用其自身许可与隐私政策。
+
+## OHOS pending 存储（0.1.3）
+
+组件提供 `WechatPreferencesRequestStore(appId, context, namespace)`，默认 namespace 为 `wechat_pending_${appId}`，兼容旧宿主 `pending` 字段。
+
+```typescript
+const store = new WechatPreferencesRequestStore(appId, context);
+const restored = store.load(); // 业务恢复资格由宿主判断
+const client = WechatClient.configure(appId, context, store);
+```
+
+同步 flush 失败抛异常，SDK发送前不能吞掉；不会从外部 Want 构造可信记录。`configure` 未显式提供 store 时仍维持原进程内语义。
+Node替身检查覆盖旧namespace、重启/隔离、删除与落盘失败；不代表真实设备磁盘或微信已验收。

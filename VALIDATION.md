@@ -78,3 +78,14 @@ iOS requestId保持nil，新增candidateRequestID与singlePending证据；一笔
 GitHub Release HAR 下载后 SHA-256 匹配，独立消费工程含新增 shareImage 参数的公开 API 编译，assembleHar 通过；file 依赖只指向校验后的远程下载缓存。`ohpm prepublish` 成功，`ohpm publish` 已接受 @gycrosskit/wechat-native@0.1.1 并进入审核；此时查询仍只有0.1.0，不能写成 Registry 新版消费完成。
 
 日志：`/tmp/contracts-wechat-consumer-remote.log`、`/tmp/contracts-wechat-swift-remote.log`、`/tmp/contracts-wechat-har-remote.log`。真机及宿主分享业务验收未执行，#5保留跟踪。
+
+## 2026-10-04 M18 同步 Preferences store 候选 0.1.3
+
+新增 WechatPreferencesRequestStore，默认 namespace/旧 pending 字段不变，flush 失败阻止发送；configure 默认仍不自动使用可信存储，业务恢复由宿主决定。
+
+- 4项核心JVM定向测试、既有微信Node契约与新增Preferences契约通过，含冷进程、同步写入/删除失败、namespace隔离和坏JSON。
+- 全部9个Maven modules staging编译与metadata/实体文件SHA校验通过，覆盖Android、JVM、iOS3架构、OHOS和Kuikly OHOS。
+- 实际API22 HAR Hvigor30/30成功，ohpm prepublish通过；Maven/HAR固定SHA写入Release SHA256SUMS。
+- 发布与真正JitPack/Git Pod/SPM/Release HAR消费者结果后续补记，不能拿旧版本验证替代；正式Registry安装另验。
+
+未运行微信客户端授权、分享、签名回跳、转账、设备存储与真实冷启动业务恢复。
