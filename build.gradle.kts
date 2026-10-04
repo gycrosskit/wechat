@@ -14,13 +14,6 @@ subprojects {
                 name = "staging"
                 url = rootProject.layout.buildDirectory.dir("maven").get().asFile.toURI()
             }
-        }
-    }
-}
-
-subprojects {
-    plugins.withId("maven-publish") {
-        extensions.configure<org.gradle.api.publish.PublishingExtension> {
             publications.withType<org.gradle.api.publish.maven.MavenPublication>().configureEach {
                 pom.licenses {
                     license {

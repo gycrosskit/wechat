@@ -5,13 +5,31 @@ import sys
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-if len(sys.argv) not in (6, 7):
-    raise SystemExit("Usage: check-maven.py repository group version modules_csv native_targets_csv [publications_csv]")
-repository = Path(sys.argv[1]).resolve()
-expected_group = sys.argv[2]
-expected_version = sys.argv[3]
-expected_modules = set(sys.argv[4].split(","))
-expected_targets = set(sys.argv[5].split(","))
+import argparse
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('repository')
+parser.add_argument('group')
+parser.add_argument('version')
+parser.add_argument('modules_csv')
+parser.add_argument('native_targets_csv')
+parser.add_argument('publications_csv', nargs='?')
+parser.add_argument('--jvm-only', action='store_true', help='JVM JAR rather than Android AAR publication')
+parser.add_argument('--license', choices=('Apache-2.0', 'BSD-3-Clause'), default='Apache-2.0')
+args = parser.parse_args()
+repository = Path(args.repository).resolve()
+expected_group = args.group
+expected_version = args.version
+expected_modules = set(args.modules_csv.split(','))
+expected_targets = set(filter(None, args.native_targets_csv.split(',')))
+
+
+def check_sidecars(path):
+    for algorithm in ('md5', 'sha1', 'sha256', 'sha512'):
+        checksum = path.with_name(path.name + '.' + algorithm)
+        assert checksum.is_file(), f'Missing checksum: {checksum}'
+        assert checksum.read_text().strip() == hashlib.new(algorithm, path.read_bytes()).hexdigest(), checksum
+
 
 def resolve_artifact(path):
     # Maven SNAPSHOT 元数据使用逻辑版本，磁盘文件使用时间戳版本。
@@ -40,19 +58,9 @@ for path in repository.rglob("*.module"):
 assert modules, "Maven staging repository is empty"
 platforms = set()
 coordinates = {}
-def check_sidecars(file):
-    for algorithm in ("md5", "sha1", "sha256", "sha512"):
-        checksum = file.with_name(file.name + "." + algorithm)
-        assert checksum.is_file(), f"Missing artifact checksum: {checksum}"
-        assert checksum.read_text().strip() == hashlib.new(algorithm, file.read_bytes()).hexdigest(), checksum
-
 for module in modules:
+    check_sidecars(module)
     check_sidecars(module.with_suffix(".pom"))
-    for algorithm in ("md5", "sha1", "sha256", "sha512"):
-        checksum = module.with_name(module.name + "." + algorithm)
-        assert checksum.is_file(), f"Missing metadata checksum: {checksum}"
-        if checksum.exists():
-            assert checksum.read_text().strip() == hashlib.new(algorithm, module.read_bytes()).hexdigest(), checksum
     pom = ET.parse(module.with_suffix(".pom")).getroot()
     namespaces = {"m": "http://maven.apache.org/POM/4.0.0"}
     assert pom.findtext("m:groupId", namespaces=namespaces) == expected_group, module
@@ -60,9 +68,10 @@ for module in modules:
     published_module = pom.findtext("m:artifactId", namespaces=namespaces)
     assert published_module == module.parent.parent.name, module
     license = pom.find("m:licenses/m:license", namespaces)
-    assert license is not None, f"Missing Apache license: {module}"
-    assert license.findtext("m:name", namespaces=namespaces) == "Apache License, Version 2.0", module
-    assert license.findtext("m:url", namespaces=namespaces) == "https://www.apache.org/licenses/LICENSE-2.0.txt", module
+    assert license is not None, f"Missing license: {module}"
+    expected_license = ("Apache License, Version 2.0", "https://www.apache.org/licenses/LICENSE-2.0.txt") if args.license == "Apache-2.0" else ("BSD 3-Clause License", "https://opensource.org/licenses/BSD-3-Clause")
+    assert license.findtext("m:name", namespaces=namespaces) == expected_license[0], module
+    assert license.findtext("m:url", namespaces=namespaces) == expected_license[1], module
     assert license.findtext("m:distribution", namespaces=namespaces) == "repo", module
     data = json.loads(module.read_text())
     component = data["component"]
@@ -80,7 +89,9 @@ for module in modules:
         if "available-at" in variant:
             redirect = variant["available-at"]
             target_module = resolve_artifact((module.parent / redirect["url"]).resolve())
+            assert redirect['group'] == expected_group and redirect['version'] == expected_version, redirect
             assert target_module.is_file(), redirect
+            assert target_module.parent.parent.name == redirect['module'], redirect
             target_variants = json.loads(target_module.read_text())["variants"]
             assert any(item["name"] == variant["name"] for item in target_variants), f"Dangling variant: {variant}"
         for entry in variant.get("files", []):
@@ -99,9 +110,9 @@ for module in modules:
                 assert dependency["version"]["requires"] in coordinates[dependency["module"]], dependency
 
 assert expected_targets <= platforms, platforms
-assert list(repository.rglob("*.aar")), "Android AAR is missing"
-expected_coordinates = set(sys.argv[6].split(",")) if len(sys.argv) == 7 else set(expected_modules)
-if len(sys.argv) == 6:
+assert list(repository.rglob("*.jar" if args.jvm_only else "*.aar")), "Required JVM/Android artifact is missing"
+expected_coordinates = set(args.publications_csv.split(",")) if args.publications_csv else set(expected_modules)
+if args.publications_csv is None:
     for module in modules:
         if module.parent.parent.name in expected_modules:
             for variant in json.loads(module.read_text())["variants"]:
@@ -110,4 +121,4 @@ if len(sys.argv) == 6:
 assert expected_modules <= expected_coordinates, expected_coordinates
 assert expected_coordinates == coordinates.keys(), f"Missing or unexpected publications: {coordinates}"
 assert len(modules) == len(expected_coordinates), "Duplicate module metadata"
-print(f"Maven metadata: {len(modules)} modules; artifact hashes, Apache POM licenses, project dependencies and platform variants passed")
+print(f"Maven metadata: {len(modules)} modules; artifact hashes/sidecars, POM licenses, project dependencies and platform variants passed")

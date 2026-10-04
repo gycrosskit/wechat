@@ -75,6 +75,27 @@ class PublicationGate(unittest.TestCase):
         self.write(self.shared, json.dumps(data).encode())
         self.reject()
 
+    def test_missing_declared_hash(self):
+        data = json.loads(self.shared.read_text())
+        del data["variants"][0]["files"][0]["sha512"]
+        self.write(self.shared, json.dumps(data).encode())
+        self.reject()
+
+    def test_corrupt_bytes_with_recomputed_sidecars(self):
+        self.write(self.shared.parent / "fixture.aar", b"corrupted")
+        self.reject()
+
+    def test_foreign_redirect_identity(self):
+        data = json.loads(self.shared.read_text())
+        data["variants"][1]["available-at"]["group"] = "foreign.group"
+        self.write(self.shared, json.dumps(data).encode())
+        self.reject()
+
+    def test_wrong_pom_identity(self):
+        pom = self.shared.with_suffix(".pom")
+        self.write(pom, pom.read_bytes().replace(GROUP.encode(), b"foreign.group"))
+        self.reject()
+
     def test_redirect_needs_same_variant(self):
         self.save(self.native, [{"name": "anotherApi", "attributes": {"org.jetbrains.kotlin.native.target": "ios_arm64"}}])
         self.reject()
