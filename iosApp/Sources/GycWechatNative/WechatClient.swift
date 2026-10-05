@@ -144,8 +144,8 @@ public final class WechatClient: NSObject, WXApiDelegate {
         precondition(Thread.isMainThread)
         if let auth = resp as? SendAuthResp {
             guard let id = session.consumeAuthorization(auth.state) else { return }
-            let code = auth.errCode == 0 ? auth.code : nil
-            deliver(WechatReceipt(requestID: id, kind: .authorization, errorCode: auth.errCode == 0 && (code?.isEmpty ?? true) ? -1 : auth.errCode, authorizationCode: code, pageResult: nil, attribution: .verified))
+            let code = auth.errCode == 0 ? auth.code.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } : nil
+            deliver(WechatReceipt(requestID: id, kind: .authorization, errorCode: auth.errCode == 0 && code == nil ? -1 : auth.errCode, authorizationCode: code, pageResult: nil, attribution: .verified))
         } else if resp is SendMessageToWXResp {
             guard let candidate = session.consumeShare() else { return }
             deliver(WechatReceipt(requestID: nil, kind: .share, errorCode: resp.errCode, authorizationCode: nil, pageResult: nil, candidateRequestID: candidate, attribution: .singlePending))
