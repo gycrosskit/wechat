@@ -2,7 +2,7 @@
 
 微信 SDK 的 OAuth 授权、图片/网页分享和商家转账确认页入口，提供请求受理状态与 SDK 回执。账号换票、分享任务、订单查询及凭据由宿主负责；转账页面 `success` 不表示资金到账。
 
-Maven **0.1.5** 修复 Android 后台入口、取消及迟回执归属；SDK、可信存储、状态和 listener 回调串行到 Main。当前发布与远程消费门禁进行中，结果见[0.1.5 验收](docs/0.1.5远程发布验收.md)。本轮未修改 OHOS 原生协议，配套 HAR 继续固定 **0.1.4**（旧 0.1.3 不支持取消 ack）；Swift Package / Git Pod 继续使用已验 **0.1.3**。历史结果见[0.1.4 远程验收](docs/0.1.4远程发布验收.md)。
+Maven **0.1.5** 已发布 [prerelease](https://github.com/gycrosskit/wechat/releases/tag/0.1.5)，修复 Android 后台入口、取消及迟回执归属；SDK、可信存储、状态和 listener 回调串行到 Main。Release 归档重下载 SHA 与 JitPack 全制品审计通过；精确合并提交、校验值、渠道限制及独立消费状态见[0.1.5 验收](docs/0.1.5远程发布验收.md)。本轮未修改 OHOS 原生协议，配套 HAR 继续固定 **0.1.4**（旧 0.1.3 不支持取消 ack）；Swift Package / Git Pod 继续使用已验 **0.1.3**。历史结果见[0.1.4 远程验收](docs/0.1.4远程发布验收.md)。
 
 ## 架构与调用流程
 
@@ -122,6 +122,12 @@ dependencyResolutionManagement {
         maven("https://jitpack.io") { content { includeGroup("com.github.gycrosskit.wechat") } }
         maven("https://maven.eazytec-cloud.com/nexus/repository/maven-public/")
         maven("https://mirrors.tencent.com/nexus/repository/maven-public/")
+        exclusiveContent {
+            forRepository {
+                maven { url = uri("https://mirrors.tencent.com/nexus/repository/maven-tencent/") }
+            }
+            filter { includeGroup("com.tencent.kuikly-open") }
+        }
     }
 }
 // commonMain.dependencies
