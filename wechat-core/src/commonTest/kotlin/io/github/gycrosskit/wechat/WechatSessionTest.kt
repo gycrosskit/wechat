@@ -1,6 +1,32 @@
 package io.github.gycrosskit.wechat
 import kotlin.test.*
 class WechatSessionTest {
+    @Test fun rejectsUntrustedRestorationAndReusedTransactionsWithoutLosingCurrentRequest() {
+        val invalidRecords = listOf(
+            WechatPendingRequest(" ", "transaction", WechatKind.SHARE),
+            WechatPendingRequest("id", "transaction", WechatKind.SHARE, "unexpected-state"),
+            WechatPendingRequest("id", "transaction", WechatKind.AUTHORIZATION),
+            WechatPendingRequest("id", "transaction", WechatKind.AUTHORIZATION, "s".repeat(257)),
+        )
+        for (record in invalidRecords) {
+            val session = WechatSession(object : WechatRequestStore {
+                override fun load() = record
+                override fun save(request: WechatPendingRequest?) = Unit
+            })
+            assertNull(session.consume(record.transaction, record.kind, record.state))
+            assertNull(session.begin("fresh", "fresh-transaction", WechatKind.SHARE))
+        }
+        val session = WechatSession()
+        assertEquals(WechatStatus.INVALID_CONTENT, session.begin("x".repeat(129), "tx", WechatKind.SHARE))
+        assertNull(session.begin("first", "reused-transaction", WechatKind.SHARE))
+        assertTrue(session.cancel("first"))
+        assertEquals(WechatStatus.INVALID_CONTENT, session.begin("second", "reused-transaction", WechatKind.SHARE))
+        assertNull(session.begin("second", "fresh-transaction", WechatKind.SHARE))
+        assertNull(session.consume("reused-transaction", WechatKind.SHARE))
+        assertTrue(session.isCurrent("second"))
+        assertEquals("second", session.consume("fresh-transaction", WechatKind.SHARE)?.requestId)
+    }
+
     @Test fun stateAndTransactionMustMatchAndOnlyConsumeOnce() {
         val s = WechatSession()
         assertNull(s.begin("one", "tx-one", WechatKind.AUTHORIZATION, "secure-state"))

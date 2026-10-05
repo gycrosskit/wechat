@@ -1,13 +1,16 @@
 import { KRAny, KuiklyRenderBaseModule, KuiklyRenderCallback } from '@kuikly-open/render';
 import { WechatClient, WechatReceipt, WechatStatus } from './WechatClient';
 interface Args { requestId: string; recipientId?: string; senderOpenId?: string; data: string; scene: string; url: string; title: string; description: string; thumbnail: string; merchantId: string; appId: string; packageValue: string; restoredRequestId: string; }
+/** 页面 owner 桥；只交付本页持有的请求 ID，销毁取消等待但不接管其他页请求。 */
 export class WechatModule extends KuiklyRenderBaseModule {
+  /** Kuikly 原生注册名。 */
   static readonly MODULE_NAME: string = 'GycWechat';
   private listener: KuiklyRenderCallback | null = null;
   private destroyed: boolean = false;
   private ids: Set<string> = new Set();
   private response = (receipt: WechatReceipt): void => { if (!this.destroyed && this.ids.delete(receipt.requestId)) { this.listener?.(receipt); } };
   syncMode(): boolean { return false; }
+  /** 页面线程异步入口；listen 只恢复可信 ID，cancel 清除失败保留原 owner。 */
   call(method: string, params: KRAny, callback: KuiklyRenderCallback | null): KRAny {
     const client = WechatClient.current();
     if (this.destroyed || !client) { callback?.({ status: 'unsupported' }); return null; }

@@ -5,11 +5,19 @@ import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { image } from '@kit.ImageKit';
 import * as wx from '@tencent/wechat_open_sdk';
 
+/** 提交状态，requested 仅表示 SDK 受理；最终回执单独交付。 */
 export type WechatStatus = 'requested' | 'busy' | 'not_installed' | 'unsupported' | 'invalid_content' | 'failed' | 'cancelled';
+/** 已验证 transaction/state 的回执；OAuth code 禁止日志/持久化，pageResult 不证明到账。 */
 export interface WechatReceipt { requestId: string; kind: string; errorCode: number; authorizationCode?: string; pageResult?: string; }
+/** 可信本地等待：requestId/transaction 最多 128 字符，授权 state 非空最多 256，其余 state 为空串。 */
 export interface WechatPendingRequest { requestId: string; transaction: string; kind: string; state: string; }
 /** 同一 App 的可信本地记录；同步原子保存，失败抛异常。禁止从 Want/页面参数构造。 */
-export interface WechatRequestStore { load(): WechatPendingRequest | null; save(request: WechatPendingRequest | null): void; }
+export interface WechatRequestStore {
+  /** 同步读取可信等待；不可读抛错，禁止覆写未知内容。 */
+  load(): WechatPendingRequest | null;
+  /** 原子保存；null 必须持久清除，失败阻止提交和结果消费。 */
+  save(request: WechatPendingRequest | null): void;
+}
 interface Pending { id: string; transaction: string; kind: string; state: string; path: string; cancelled: boolean; }
 interface PageResult { result?: string; }
 type Listener = (receipt: WechatReceipt) => void;
@@ -40,6 +48,7 @@ export class WechatClient implements wx.WXApiEventHandler {
     this.api = wx.WXAPIFactory.createWXAPI(appId, context);
     this.api.setPayReportEnabled(false);
   }
+  /** UI 线程配置进程实例；同一 appId 复用，换 AppKey 拒绝，先前 Want 仍交官方 SDK 验证。 */
   static configure(appId: string, context: common.UIAbilityContext, store: WechatRequestStore | null = null): WechatClient {
     if (!appId.trim()) { throw new Error('WeChat appId missing'); }
     if (WechatClient.instance && WechatClient.instance.appId !== appId) { throw new Error('WeChat already configured'); }
@@ -50,6 +59,7 @@ export class WechatClient implements wx.WXApiEventHandler {
     }
     return WechatClient.instance;
   }
+  /** 返回已配置进程入口，未配置为 null。 */
   static current(): WechatClient | null { return WechatClient.instance; }
   /** EntryAbility 尚未初始化时仅暂存原始 Want，配置完成后仍交官方 SDK 验证。 */
   static forwardWant(want: Want): boolean {
@@ -57,14 +67,18 @@ export class WechatClient implements wx.WXApiEventHandler {
     if (WechatClient.wants.length === 4) { WechatClient.wants.shift(); }
     WechatClient.wants.push(want); return false;
   }
+  /** 只有可信 pending 或已验证缓存回执允许恢复页面 owner。 */
   canResume(id: string): boolean { return this.pending?.id === id || this.receipts.some((receipt: WechatReceipt) => receipt.requestId === id); }
+  /** UI 线程附着回执监听；ids 为 null 接收全部，否则只交付指定 owner 的 ID。 */
   addListener(listener: Listener, ids: Set<string> | null = null): void {
     this.listeners.set(listener, ids);
     const ready = this.receipts.filter((receipt: WechatReceipt) => !ids || ids.has(receipt.requestId));
     this.receipts = this.receipts.filter((receipt: WechatReceipt) => ids !== null && !ids.has(receipt.requestId));
     ready.forEach((receipt: WechatReceipt) => listener(receipt));
   }
+  /** 移除指定监听，不取消在途请求。 */
   removeListener(listener: Listener): void { this.listeners.delete(listener); }
+  /** 原始 Want 交官方 SDK 校验，异常返回 false；不直接从 Want 构造关联凭据。 */
   handleWant(want: Want): boolean { try { return this.api.handleWant(want, this); } catch (_) { return false; } }
   onReq(_req: wx.BaseReq): void {}
   onResp(resp: wx.BaseResp): void {
@@ -96,6 +110,7 @@ export class WechatClient implements wx.WXApiEventHandler {
       this.receipts.push(result);
     }
   }
+  /** 开始 OAuth 并持久保存随机 state；成功仅表示 SDK 受理，后端负责换票。 */
   async authorize(id: string): Promise<WechatStatus> {
     const rejected = this.begin(id, 'authorization'); if (rejected) { return rejected; }
     const pending = this.pending!;
@@ -105,6 +120,7 @@ export class WechatClient implements wx.WXApiEventHandler {
       return await this.send(req, pending);
     } catch (_) { return this.fail(pending, 'failed'); }
   }
+  /** Base64 编码 PNG/JPEG 最大 25 MiB；目标联系人不支持时拒绝，临时文件消费/取消后删除。 */
   async shareImage(id: string, base64: string, scene: string, recipientId?: string, _senderOpenId?: string): Promise<WechatStatus> {
     const rejected = this.begin(id, 'share'); if (rejected) { return rejected; }
     const pending = this.pending!;
@@ -136,6 +152,7 @@ export class WechatClient implements wx.WXApiEventHandler {
     } catch (_) { return this.fail(pending, pending.cancelled ? 'cancelled' : 'invalid_content'); }
     finally { if (source) { await source.release(); } if (pending.cancelled) { await this.removeFile(pending.path); } }
   }
+  /** 分享无凭据 HTTP(S) 页面；缩略图是 Base64 图片，标题/描述同时受字符与字节限制。 */
   async shareWebPage(id: string, address: string, title: string, description: string, thumbBase64: string, scene: string): Promise<WechatStatus> {
     const rejected = this.begin(id, 'share'); if (rejected) { return rejected; }
     const pending = this.pending!;
@@ -153,6 +170,7 @@ export class WechatClient implements wx.WXApiEventHandler {
     } catch (_) { return this.fail(pending, 'invalid_content'); }
     finally { if (source) { await source.release(); } }
   }
+  /** 打开商家确认页，packageValue 来自可信后端并原样编码；回执不证明到账。 */
   async openMerchantTransfer(id: string, merchantId: string, appId: string, packageValue: string): Promise<WechatStatus> {
     const rejected = this.begin(id, 'merchant_transfer'); if (rejected) { return rejected; }
     const pending = this.pending!;
@@ -161,6 +179,7 @@ export class WechatClient implements wx.WXApiEventHandler {
     req.query = `mchId=${this.encode(merchantId)}&appId=${this.encode(appId)}&package=${this.encode(packageValue)}`;
     return this.send(req, pending);
   }
+  /** 清除可信本地等待并删除临时文件；清除失败抛错保留 pending，不能关闭外部微信页面。 */
   cancel(id: string): boolean {
     this.receipts = this.receipts.filter((receipt: WechatReceipt) => receipt.requestId !== id);
     const pending = this.pending;

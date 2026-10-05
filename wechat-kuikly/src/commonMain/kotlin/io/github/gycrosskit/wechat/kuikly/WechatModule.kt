@@ -8,6 +8,7 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 @OptIn(ExperimentalEncodingApi::class)
+/** 页面线程使用；attach 后提交请求，dispose 撤销所有回调并通知原生取消本页等待。 */
 class WechatModule : Module(), WechatClient {
     private var listener: WechatListener? = null
     private var listening: CallbackRef? = null
@@ -15,6 +16,7 @@ class WechatModule : Module(), WechatClient {
     private val cancellations = mutableMapOf<String, CallbackRef>()
     private var disposed = false
     override fun moduleName(): String = NAME
+    /** 注册长期回执；restoredRequestId 只能取宿主可信业务记录，不从页面回跳恢复。 */
     fun attach(listener: WechatListener, restoredRequestId: String? = null) {
         if (disposed) return
         this.listener = listener
@@ -77,6 +79,7 @@ class WechatModule : Module(), WechatClient {
         }, false).callbackRef
         if (!completed && ref != null) callbacks[id] = ref
     }
+    /** 幂等撤销长期监听、提交/取消确认回调和页面 owner；迟到消息不交付。 */
     fun dispose() {
         if (disposed) return
         disposed = true
@@ -86,5 +89,9 @@ class WechatModule : Module(), WechatClient {
         cancellations.values.forEach(::removeCallback); cancellations.clear()
     }
     private fun sceneValue(scene: WechatScene): String = if (scene == WechatScene.TIMELINE) "timeline" else "session"
-    companion object { const val NAME = "GycWechat"; private const val MAX_IMAGE = 25 * 1024 * 1024 }
+    companion object {
+        /** 原生模块注册名。 */
+        const val NAME = "GycWechat"
+        private const val MAX_IMAGE = 25 * 1024 * 1024
+    }
 }

@@ -20,7 +20,7 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import org.json.JSONObject
 
-/** 宿主 Application 持有唯一实例，固定 wxapi Activity 把 Intent 交给 handleIntent。 */
+/** 宿主 Application 持有唯一非空 appId 实例，固定 wxapi Activity 把 Intent 交给 handleIntent；后台入口自动排队到 Main，store 同步读写也在 Main。 */
 class AndroidWechatClient(context: Context, appId: String, listener: WechatListener? = null, store: WechatRequestStore? = null) : WechatClient {
     private val main = Handler(Looper.getMainLooper())
     private val images = Executors.newSingleThreadExecutor()
@@ -45,6 +45,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
     private val registered by lazy { checkMain(); api.registerApp(appId) }
     init { require(appId.isNotBlank()) }
 
+    /** 替换提交监听；暂存回执只回放给原 listener 或此前无 owner 的回执。 */
     fun attach(listener: WechatListener) {
         val owner = Owner(listener)
         desiredOwner = owner
@@ -59,6 +60,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
             }
         }
     }
+    /** 撤销监听但保留 pending；迟到回执最多缓存 64 笔并保持原 owner。 */
     fun detach() {
         desiredOwner = null
         onMain { if (desiredOwner == null) activeOwner = null }
