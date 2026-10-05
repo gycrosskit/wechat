@@ -5,22 +5,31 @@ import Security
 import UIKit
 import WechatOpenSDK
 
+/// 微信好友会话或朋友圈。
 public enum WechatScene { case session, timeline }
+/// 明确 state 证明、单笔候选或无归属证据；候选不能作为证明。
 public enum WechatAttribution { case verified, singlePending, unattributed }
+/// 授权、分享或商家确认页。
 public enum WechatKind { case authorization, share, merchantTransfer }
+/// 厂商结果；授权 code 交给后端，确认页结果不表示资金到账。
 public struct WechatReceipt {
     /// iOS 分享/转账 SDK 未提供 transaction，因此恒为 nil。
     public let requestID: String?
+    /// 实际 SDK 回执类型。
     public let kind: WechatKind
+    /// 厂商错误码；成功授权缺少 code 时为 -1。
     public let errorCode: Int32
+    /// 敏感短期 OAuth code，其他结果为 nil，禁止日志和持久化。
     public let authorizationCode: String?
     /// 仅表示确认页 result，不能据此判定资金到账。
     public let pageResult: String?
+    /// 分享本地单笔候选 ID，默认 nil；SDK 未证明其归属。
     public var candidateRequestID: String? = nil
+    /// 默认无归属证据；授权按 state 匹配后为 verified。
     public var attribution: WechatAttribution = .unattributed
 }
 
-/** 宿主持有唯一实例；所有入口和回调在主线程。注册前由宿主决定隐私授权。 */
+/// 宿主持有唯一实例；所有入口和回调在主线程。注册前由宿主决定隐私授权。
 public final class WechatClient: NSObject, WXApiDelegate {
     private let session: WechatSession
     private let submitted: (String, String) -> Void
@@ -28,6 +37,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
     private var receipts: [WechatReceipt] = []
     private let registered: Bool
     private var callbackDigests = Set<String>()
+    /// Main 注册一次 SDK；宿主传入 appID、HTTPS universalLink 和可选可信 journal。
     public init(appID: String, universalLink: String,
                 onSubmitted: @escaping (String, String) -> Void,
                 onReceipt: ((WechatReceipt) -> Void)? = nil,
@@ -40,12 +50,14 @@ public final class WechatClient: NSObject, WXApiDelegate {
         self.registered = !appID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && link?.scheme == "https" && link?.host != nil && WXApi.registerApp(appID, universalLink: universalLink)
         super.init()
     }
+    /// Main 附着回执监听并回放最多 64 笔暂存结果，暂存随后清除。
     public func attach(_ listener: @escaping (WechatReceipt) -> Void) {
         precondition(Thread.isMainThread)
         receipt = listener
         let buffered = receipts; receipts = []
         buffered.forEach(listener)
     }
+    /// Main 撤销监听；在途等待保留，回执仍可暂存。
     public func detach() { precondition(Thread.isMainThread); receipt = nil }
     private func deliver(_ result: WechatReceipt) {
         if let receipt { receipt(result) } else {
@@ -54,16 +66,19 @@ public final class WechatClient: NSObject, WXApiDelegate {
             receipts.append(result)
         }
     }
+    /// Main 将 URL 交官方 SDK 验证；摘要去重但不保存包含 code 的原始 URL。
     public func handleOpenURL(_ url: URL) -> Bool {
         precondition(Thread.isMainThread)
         guard registered, !alreadyHandled(url.absoluteString) else { return false }
         return WXApi.handleOpen(url, delegate: self)
     }
+    /// Main 将 Universal Link 交官方 SDK 验证并摘要去重。
     public func handleUniversalLink(_ activity: NSUserActivity) -> Bool {
         precondition(Thread.isMainThread)
         guard registered, let url = activity.webpageURL, !alreadyHandled(url.absoluteString) else { return false }
         return WXApi.handleOpenUniversalLink(activity, delegate: self)
     }
+    /// Main 开始 OAuth；生成安全随机 state 并严格匹配最终回执。
     public func authorize(requestID: String) {
         precondition(Thread.isMainThread)
         var random = [UInt8](repeating: 0, count: 32)
@@ -75,6 +90,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
         request.state = state
         send(request, id: requestID)
     }
+    /// Main 分享编码图片，最大 25 MiB；iOS 不保证指定联系人支持，因此非空目标拒绝而不降级。
     public func shareImage(requestID: String, data: Data, scene: WechatScene, recipientID: String? = nil, senderOpenID: String? = nil) {
         precondition(Thread.isMainThread)
         guard begin(requestID, sharing: true) else { return }
@@ -90,6 +106,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
         message.thumbData = thumb
         share(message, id: requestID, scene: scene)
     }
+    /// Main 分享无凭据 HTTP(S) 页面；标题/描述限制同时按字符和 UTF-8 字节截断。
     public func shareWebPage(requestID: String, url: String, title: String, description: String, thumbnail: Data, scene: WechatScene) {
         precondition(Thread.isMainThread)
         guard begin(requestID, sharing: true) else { return }
@@ -105,6 +122,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
         message.thumbData = thumb
         share(message, id: requestID, scene: scene)
     }
+    /// Main 打开商家转账确认页，参数原样 URL 编码；确认回执不表示到账。
     public func openMerchantTransfer(requestID: String, merchantID: String, appID: String, packageValue: String) {
         precondition(Thread.isMainThread)
         guard begin(requestID) else { return }
@@ -115,6 +133,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
         request.query = "mchId=\(merchant)&appId=\(app)&package=\(package)"
         send(request, id: requestID)
     }
+    /// Main 清除本地等待，不能关闭微信；已发送分享取消后隔离本实例分享，避免错认迟回执。
     public func cancel(requestID: String) {
         precondition(Thread.isMainThread)
         receipts.removeAll { $0.requestID == requestID || $0.candidateRequestID == requestID }

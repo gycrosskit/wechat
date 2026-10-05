@@ -1,14 +1,20 @@
 import Foundation
 
+/// 同一 App 可信的授权等待记录；不从回跳 URL 构造或打印随机 state。
 public struct WechatPendingAuthorization {
+    /// 宿主非空唯一 ID，最多 128 个字符。
     public let requestID: String
+    /// 组件产生的非空随机 state，最多 256 个字符；仅用于回执关联。
     public let state: String
+    /// 构造可信快照；Session 在加载或开始时核验长度和非空。
     public init(requestID: String, state: String) { self.requestID = requestID; self.state = state }
 }
 
 /// 同一 App 的可信本地记录；同步原子保存，取消/消费必须清除。不能从回跳 URL 恢复 state。
 public protocol WechatAuthorizationStore {
+    /// 同步读取唯一等待；异常会阻止覆写未知旧 journal。
     func load() throws -> WechatPendingAuthorization?
+    /// 原子保存；nil 持久清除，失败必须抛错并阻止消费。
     func save(_ request: WechatPendingAuthorization?) throws
 }
 

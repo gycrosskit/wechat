@@ -6,16 +6,19 @@ import { WechatPendingRequest, WechatRequestStore } from './WechatClient';
 export class WechatPreferencesRequestStore implements WechatRequestStore {
   private readonly storage: preferences.Preferences;
 
+  /** 默认 namespace 为 wechat_pending_appId；旧宿主可显式提供原存储名，不迁移未知内容。 */
   constructor(appId: string, context: common.UIAbilityContext, namespace: string = `wechat_pending_${appId}`) {
     if (!appId.trim() || !namespace.trim()) throw new Error('WeChat store configuration missing');
     this.storage = preferences.getPreferencesSync(context, { name: namespace });
   }
 
+  /** 同步读取可信记录；损坏 JSON 抛错，不覆盖或猜测恢复。 */
   load(): WechatPendingRequest | null {
     const raw = this.storage.getSync('pending', '') as string;
     return raw ? JSON.parse(raw) as WechatPendingRequest : null;
   }
 
+  /** 同步 flush；null 清除记录，失败恢复同进程缓存并保留原始异常。 */
   save(request: WechatPendingRequest | null): void {
     const previous = this.storage.getSync('pending', '') as string;
     try {
