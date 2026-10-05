@@ -1,10 +1,10 @@
 # GY CrossKit Wechat
 
-iOS 新候选：`GycWechatNative` Pod内部版本0.1.4，使用独立不可变Git标签 `native-0.1.4`（未发布，待真实下载/厂商编译/link核验）。本轮仅Swift空白OAuth code修复，不产生新Maven坐标；Maven0.1.5/HAR0.1.4保留。详见[完整源码审查](docs/完整源码审查.md)。
+iOS 已发布：`GycWechatNative` Pod内部版本0.1.4，使用独立不可变Git标签 `native-0.1.4`。真实 Git Pod/UIKit App 链接与 Swift Package/device 编译通过，标签及实际编译源码一致。本轮仅Swift空白OAuth code修复，不产生新Maven坐标；Maven0.1.5/HAR0.1.4保留。详见[原生发布验收](docs/native-0.1.4发布验收.md)与[完整源码审查](docs/完整源码审查.md)。
 
 微信 SDK 的 OAuth 授权、图片/网页分享和商家转账确认页入口，提供请求受理状态与 SDK 回执。账号换票、分享任务、订单查询及凭据由宿主负责；转账页面 `success` 不表示资金到账。
 
-Maven **0.1.5** 已发布 [prerelease](https://github.com/gycrosskit/wechat/releases/tag/0.1.5)，修复 Android 后台入口、取消及迟回执归属；SDK、可信存储、状态和 listener 回调串行到 Main。Release 归档重下载 SHA 与 JitPack 全制品审计通过；精确合并提交、校验值、渠道限制及独立消费状态见[0.1.5 验收](docs/0.1.5远程发布验收.md)。本轮未修改 OHOS 原生协议，配套 HAR 继续固定 **0.1.4**（旧 0.1.3 不支持取消 ack）；Swift Package / Git Pod 新候选为 **native-0.1.4**（Pod内部0.1.4，待远程核验）；已验0.1.3保留历史记录。历史结果见[0.1.4 远程验收](docs/0.1.4远程发布验收.md)。
+Maven **0.1.5** 已发布 [prerelease](https://github.com/gycrosskit/wechat/releases/tag/0.1.5)，修复 Android 后台入口、取消及迟回执归属；SDK、可信存储、状态和 listener 回调串行到 Main。Release 归档重下载 SHA 与 JitPack 全制品审计通过；精确合并提交、校验值、渠道限制及独立消费状态见[0.1.5 验收](docs/0.1.5远程发布验收.md)。本轮未修改 OHOS 原生协议，配套 HAR 继续固定 **0.1.4**（旧 0.1.3 不支持取消 ack）；Swift Package / Git Pod 已发布 **native-0.1.4**（Pod内部0.1.4，真实远程消费见原生验收）；已验0.1.3保留历史记录。历史结果见[0.1.4 远程验收](docs/0.1.4远程发布验收.md)。
 
 ## 架构与调用流程
 
@@ -144,7 +144,7 @@ iOS 选择 Git Pod，或 Xcode 的 Swift Package：
 pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-0.1.4'
 ```
 
-Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，候选revision/tag为 `native-0.1.4`（未发布），产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，未发布到 CocoaPods Specs。
+Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-0.1.4`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，未发布到 CocoaPods Specs。
 
 HarmonyOS 0.1.4 的 OHPM `next` 发布已接受并 under review；精确版本查询仍为 NOTFOUND，Registry 安装尚未通过。以下命令仅在审核上架后使用。审核期间可按 Release SHA 固定下载独立原生包：
 
