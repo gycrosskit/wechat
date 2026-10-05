@@ -6,7 +6,7 @@ val componentVersion = providers.gradleProperty("wechatVersion").orElse("0.1.5")
 kotlin {
     androidTarget()
     iosArm64()
-    iosX64()
+    iosX64 { binaries.framework { baseName = "WechatConsumer" } }
     iosSimulatorArm64 { binaries.framework { baseName = "WechatConsumer" } }
     ohosArm64()
     sourceSets {
