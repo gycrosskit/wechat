@@ -2,7 +2,101 @@
 
 微信 SDK 的 OAuth 授权、图片/网页分享和商家转账确认页入口，提供请求受理状态与 SDK 回执。账号换票、分享任务、订单查询及凭据由宿主负责；转账页面 `success` 不表示资金到账。
 
-本轮 Maven 与 HAR 候选为 **0.1.4**，取消确认协议必须同版配套；已发布为 prerelease，JitPack 最终 ok 且全变体字节核验通过；真实远程 Android/iOS/OHOS 编译、Simulator 最终链接与 Release HAR 消费已通过。Swift Package / Git Pod 原生源码未变，继续使用已验 **0.1.3**。最新状态见[0.1.4 远程验收](docs/0.1.4远程发布验收.md)，历史结果见[闭合验收](docs/远程闭合验收.md)；旧 HAR **0.1.3** 不含新协议。
+Maven **0.1.5** 修复 Android 后台入口、取消及迟回执归属；SDK、可信存储、状态和 listener 回调串行到 Main。当前发布与远程消费门禁进行中，结果见[0.1.5 验收](docs/0.1.5远程发布验收.md)。本轮未修改 OHOS 原生协议，配套 HAR 继续固定 **0.1.4**（旧 0.1.3 不支持取消 ack）；Swift Package / Git Pod 继续使用已验 **0.1.3**。历史结果见[0.1.4 远程验收](docs/0.1.4远程发布验收.md)。
+
+## 架构与调用流程
+
+宿主在隐私准入后持有进程级原生 client，并转发官方 SDK 回跳；请求受理与业务回执分开。可信 pending 存储由宿主提供，不能从外部回跳重建授权资格。
+
+```mermaid
+flowchart TB
+    H["宿主<br/>AppId / requestId / store / 回跳"] --> A["AndroidWechatClient<br/>Main 串行 SDK / Session / Store"]
+    H --> I["IosWechatClient<br/>宿主 IosWechatBridge"]
+    I --> S["Swift WechatClient<br/>WechatSession"]
+    H --> K["WechatModule<br/>Kuikly Kotlin"]
+    K --> R["WechatModule<br/>ArkTS Renderer"]
+    R --> O["ArkTS WechatClient<br/>进程单例"]
+    A --> SDK["各平台官方微信 SDK"]
+    S --> SDK
+    O --> SDK
+    SDK -.-> E["回跳验证<br/>归一 WechatReceipt"]
+    E -.-> H
+```
+
+下面是 Android OAuth 的关键流程；Android/OHOS 回执校验 transaction、kind 和 OAuth state。iOS OAuth 以 state 关联，分享没有 SDK transaction，只有本地单笔候选，不能沿用图中的 Android 归属证明。
+
+```mermaid
+sequenceDiagram
+    participant H as 宿主
+    participant C as Android client
+    participant M as Android Main
+    participant P as Session
+    participant T as Store
+    participant W as 微信 SDK
+    H->>C: authorize(requestId)（任意线程）
+    C->>M: Main 即时执行 / 后台排队
+    M->>P: begin(id, token, state)
+    P->>T: 同步原子 save(pending)
+    T-->>P: 成功；失败则拒绝发送
+    M->>W: registerApp / sendReq()
+    M-->>H: onSubmitted(status)（Main）
+    Note over H,W: REQUESTED 仅表示受理
+    W-->>H: 官方回跳 Intent
+    H->>C: handleIntent(rawIntent, callback)
+    C->>M: 返回 SDK 真实处理结果（Main callback）
+    W-->>C: onResp
+    C->>P: consume(token, kind, state)
+    P->>T: 同步 save(null)
+    P-->>C: 匹配且清除后消费
+    C-->>H: onReceipt(WechatReceipt)
+    opt 宿主 cancel(requestId)
+        H->>C: cancel(requestId)
+        C->>M: queued 请求取消 / 清除可信 pending
+        M-->>H: 清除成功后 CANCELLED
+        Note over H,W: 取消本地等待<br/>无法关闭微信页面
+    end
+```
+
+类型图聚焦 Kotlin Android 链路，`WechatSession` 是内部单笔 pending 状态；监听器分别接收受理与回执。iOS 已发送分享后取消会隔离该实例后续分享。Kuikly `dispose()` 移除页面监听和 callback，原生 client 仍为进程级实例；取消是否成功必须等待同版原生确认。
+
+```mermaid
+classDiagram
+    class WechatClient {
+        <<interface>>
+        +authorize(requestId)
+        +cancel(requestId)
+    }
+    class AndroidWechatClient {
+        +handleIntent(intent) Boolean（仅 Main）
+        +handleIntent(intent, callback)（任意线程）
+        +attach(listener)
+        +detach()
+    }
+    class WechatSession {
+        <<internal>>
+        +begin(id, token, kind, state)
+        +consume(token, kind, state)
+        +cancel(id) Boolean
+    }
+    class WechatRequestStore {
+        <<interface>>
+        +load()
+        +save(request)
+    }
+    class WechatListener {
+        <<interface>>
+        +onSubmitted(requestId, status)
+        +onReceipt(receipt)
+    }
+    class WechatReceipt
+    WechatClient <|.. AndroidWechatClient
+    AndroidWechatClient *-- WechatSession
+    WechatSession --> WechatRequestStore : 可选可信存储
+    AndroidWechatClient --> WechatListener : 主线程通知
+    WechatListener ..> WechatReceipt
+```
+
+源码入口：[公共契约与回执](wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatClient.kt)、[Android SDK 接线](wechat-core/src/androidMain/kotlin/io/github/gycrosskit/wechat/AndroidWechatClient.kt)、[Kotlin pending](wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatSession.kt)、[iOS KMP 桥](wechat-core/src/iosMain/kotlin/io/github/gycrosskit/wechat/IosWechatClient.kt)、[Swift client](iosApp/Sources/GycWechatNative/WechatClient.swift)、[Swift 分享隔离](iosApp/Sources/GycWechatNative/WechatSession.swift)、[Kuikly 取消确认与 dispose](wechat-kuikly/src/commonMain/kotlin/io/github/gycrosskit/wechat/kuikly/WechatModule.kt)、[OHOS client](ohos/wechat-native/src/main/ets/WechatClient.ets)。指定联系人图片分享只有 Android 实现，iOS/OHOS 返回不支持；转账页回执不是到账证明。
 
 ## 支持范围
 
@@ -31,9 +125,9 @@ dependencyResolutionManagement {
     }
 }
 // commonMain.dependencies
-implementation("com.github.gycrosskit.wechat:wechat-core:0.1.4")
+implementation("com.github.gycrosskit.wechat:wechat-core:0.1.5")
 // OHOS Kuikly 宿主额外添加：
-implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.4")
+implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.5")
 ```
 
 iOS 选择 Git Pod，或 Xcode 的 Swift Package：
@@ -54,19 +148,19 @@ ohpm install @gycrosskit/wechat-native@0.1.4
 
 ## 最小接入
 
-Android 在隐私准入后于主线程构造并持有一个进程级客户端：
+Android 在隐私准入后构造并持有一个进程级客户端；构造及 Unit 入口允许后台调用，SDK 与 store 在 Main 懒初始化：
 
 ```kotlin
 import io.github.gycrosskit.wechat.AndroidWechatClient
 import io.github.gycrosskit.wechat.WechatScene
 
 val client = AndroidWechatClient(application, appId, listener, trustedStore)
-client.authorize(uniqueRequestId)
+client.authorize(uniqueRequestId) // 返回不保证已发送；等待 Main onSubmitted(REQUESTED)。
 // 普通好友分享；requestId 每次调用唯一，不复用。
 client.shareImage(anotherUniqueRequestId, imageBytes, WechatScene.SESSION)
 ```
 
-上述类型来自 `wechat-core`，完整包名、监听器、store 与平台示例见[接入指南](docs/接入指南.md)。宿主必须实现 `{applicationId}.wxapi.WXEntryActivity`，在 `onCreate/onNewIntent` 把原始 Intent 交给同一实例的 `handleIntent` 并结束 Activity；授权字段只能由官方 SDK 验证。还需配置 INTERNET、开放平台包名和签名。
+上述类型来自 `wechat-core`，完整包名、监听器、store 与平台示例见[接入指南](docs/接入指南.md)。宿主必须实现 `{applicationId}.wxapi.WXEntryActivity`，在 Main `onCreate/onNewIntent` 把原始 Intent 交给同一实例的同步 `handleIntent(intent): Boolean` 并结束 Activity；后台接入使用 `handleIntent(intent) { handled -> ... }`，callback 在 Main 返回 `Result<Boolean>`，成功值为真实 SDK Boolean，失败为异常；授权字段只能由官方 SDK 验证。还需配置 INTERNET、开放平台包名和签名。
 
 iOS 持有唯一 `WechatClient`，把 URL Scheme / Universal Link 交给 `handleOpenURL` / `handleUniversalLink`；宿主配置 Info.plist、Associated Domains 与 AASA。KMP 使用导出的 `IosWechatBridge`，参考 [Swift 适配示例](iosApp/KmpWechatBridge.swift)。
 
@@ -74,6 +168,8 @@ OHOS 在 EntryAbility 配置 `WechatClient.configure(appId, context, trustedStor
 
 ## 必须了解的边界
 
+- Android 构造、授权、分享、转账、取消与 attach/detach 允许任意线程；主线程即时执行，后台排队，图片计算仍在专用 imageExecutor。Unit 返回不代表 SDK 受理；同步 Boolean `handleIntent` 仍限定 Main，兼容旧 false 表示未处理（含 SDK 异常），后台必须使用 callback 重载，不阻塞等待。
+- Android Main 取消尚未执行的入队请求后，该请求不会打开微信。`cancel` 返回不保证清除；存储清除失败保留 pending/owner，不伪造 CANCELLED 或 FAILED 终态，未知 ID 不通知终态。无 owner 的回执支持晚监听；有 owner 的迟回执只交给同一 listener（detach 后重新 attach 也可回放），新 listener 不接旧 owner 结果。
 - `REQUESTED` 只表示 SDK 受理。Android/OHOS 按 transaction、类型和 OAuth state 验证回执；iOS 分享没有 transaction，`requestId == nil`，`SINGLE_PENDING` 只是当前单笔任务的本地候选，不能当成 SDK 准确关联或资金凭据。
 - iOS 分享在回执前保持 `BUSY`；SDK 已发送后取消，会隔离本实例后续分享并返回 `UNSUPPORTED`，防止迟回执误认。不得在同进程重建客户端绕过；OAuth 与转账仍可使用。
 - 冷启动恢复需要宿主提供同步原子可信 store，发送前保存、消费/取消前清除。不能从 Intent/Want/URL 生成恢复记录；iOS 只恢复 OAuth。归一回执的迟监听缓存仅限当前进程，业务服务端仍需兜底。

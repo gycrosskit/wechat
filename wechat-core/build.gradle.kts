@@ -19,6 +19,9 @@ kotlin {
             implementation("com.tencent.mm.opensdk:wechat-sdk-android:6.8.34")
 
         }
+        androidUnitTest.dependencies {
+            implementation("org.robolectric:robolectric:4.16.1")
+        }
         commonTest.dependencies { implementation(kotlin("test")) }
         // JVM 测试用薄 Kuikly transport stub 执行实际 Module，避免复制取消协议。
         jvmTest { kotlin.srcDir(rootProject.file("wechat-kuikly/src/commonMain/kotlin")) }
@@ -29,6 +32,7 @@ android {
     namespace = "io.github.gycrosskit.wechat"
     compileSdk = 36
     defaultConfig { minSdk = 24 }
+    testOptions.unitTests.isIncludeAndroidResources = true
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11

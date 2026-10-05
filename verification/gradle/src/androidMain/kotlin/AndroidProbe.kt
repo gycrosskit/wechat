@@ -5,3 +5,7 @@ fun androidProbe(context: Context, listener: WechatListener): (Intent) -> Boolea
     val client = AndroidWechatClient(context, "host-app-id", listener, RequestStoreProbe())
     return client::handleIntent
 }
+
+fun androidAsyncIntentProbe(client: AndroidWechatClient, intent: Intent, callback: (Result<Boolean>) -> Unit) {
+    client.handleIntent(intent, callback)
+}

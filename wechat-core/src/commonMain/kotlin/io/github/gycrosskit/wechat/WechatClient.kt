@@ -32,14 +32,21 @@ interface WechatListener {
     fun onReceipt(receipt: WechatReceipt)
 }
 
-/** 宿主持有进程级实例；主线程调用。requestId 由宿主生成，本实例内不能复用。 */
+/**
+ * 宿主持有进程级实例，requestId 由宿主生成，本实例内不能复用。
+ * Android 入口可从任意线程调用，SDK、store、状态与 listener 回调由组件串行到主线程；其他平台遵守各自原生主线程约束。
+ * Unit 返回不保证已发送，必须等 onSubmitted(REQUESTED) 确认 SDK 真实受理，再等 onReceipt 处理最终回执。
+ */
 interface WechatClient {
     fun authorize(requestId: String)
     /** recipientId 为同 App 可信目标 openId；senderOpenId 为当前发送者的可信 openId。非空目标不降级普通好友。 */
     fun shareImage(requestId: String, data: ByteArray, scene: WechatScene, recipientId: String? = null, senderOpenId: String? = null)
     fun shareWebPage(requestId: String, url: String, title: String, description: String, thumbnail: ByteArray, scene: WechatScene)
     fun openMerchantTransfer(requestId: String, merchantId: String, appId: String, packageValue: String)
-    /** 只结束本地等待，无法关闭已经打开的微信页面。 */
+    /**
+     * 只结束本地等待，无法关闭已经打开的微信页面。CANCELLED 仅在本地等待清除或尚未执行的入队请求终止成功后通知。
+     * Android 后台调用会排队；存储清除失败或未知 ID 不通知终态，保留 pending 以便迟回执或取消重试。
+     */
     fun cancel(requestId: String)
 }
 
