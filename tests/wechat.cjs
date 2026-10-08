@@ -190,6 +190,61 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  assert.equal(cancelReceipts.length, 2, 'destroyed owner cannot receive the restored receipt');
  restoredPage.onDestroy(); foreignPage.onDestroy();
  console.log('Real OHOS cancel bridge: failed clear retains owner, late receipt, unknown/foreign/completed ID, retry and late submission ack passed');
+
+ // 回放中撤销/替换注册必须保留未消费项，包括同一函数的重注册和ID过滤。
+ for (const mode of ['remove', 'replace', 'same-listener']) {
+   const Replay = fresh(); const replay = Replay.configure('host-app-id', { cacheDir: '/tmp' });
+   for (let i = 0; i < 3; i++) {
+     const id = 'replay-' + mode + '-' + i;
+     assert.equal(await replay.authorize(id), 'requested'); const req = sent.at(-1);
+     replay.onResp(response(wx.SendAuthResp, req, { state: req.state, code: 'fixture-code' }));
+   }
+   const old = [], next = []; let registration = 0;
+   const successor = r => next.push(r.requestId);
+   const listener = r => {
+     (mode === 'same-listener' && registration ? next : old).push(r.requestId);
+     if (!registration) {
+       registration++;
+       replay.removeListener(listener);
+       if (mode === 'replace') replay.addListener(successor);
+       if (mode === 'same-listener') replay.addListener(listener);
+     }
+   };
+   replay.addListener(listener, new Set(['replay-' + mode + '-0', 'replay-' + mode + '-1']));
+   assert.deepEqual(old, ['replay-' + mode + '-0']);
+   if (mode === 'remove') replay.addListener(successor);
+   assert.deepEqual(next, ['replay-' + mode + '-1', 'replay-' + mode + '-2']);
+   const duplicate = []; replay.addListener(r => duplicate.push(r)); assert.equal(duplicate.length, 0);
+ }
+ // Map不能在当前回执投递中再次访问回调刚创建的新注册。
+ const Live = fresh(); const live = Live.configure('host-app-id', { cacheDir: '/tmp' });
+ let liveCalls = 0;
+ const liveListener = () => {
+   liveCalls++; live.removeListener(liveListener); live.addListener(liveListener);
+   assert.equal(liveCalls, 1, 're-registration must not consume the same live receipt twice');
+ };
+ live.addListener(liveListener); await live.authorize('live-owner-reentry');
+ const liveReq = sent.at(-1);
+ live.onResp(response(wx.SendAuthResp, liveReq, { state: liveReq.state, code: 'fixture-code' }));
+ assert.equal(liveCalls, 1);
+ const Limits = fresh(); const limits = Limits.configure('host-app-id', { cacheDir: '/tmp' });
+ assert.equal(await limits.authorize('😀'.repeat(65)), 'invalid_content');
+ assert.equal(await limits.authorize('e\u0301'.repeat(65)), 'invalid_content');
+ assert.equal(await limits.authorize('😀'.repeat(64)), 'requested');
+ assert.equal(limits.cancel('😀'.repeat(64)), true);
+ for (const saved of [
+   { requestId: '😀'.repeat(65), transaction: 'fixture-tx', kind: 'authorization', state: 'state' },
+   { requestId: 'id', transaction: 'fixture-tx', kind: 'authorization', state: '😀'.repeat(129) },
+ ]) {
+   const Restored = fresh(); const restored = Restored.configure('host-app-id', { cacheDir: '/tmp' }, { load: () => saved, save() {} });
+   assert.equal(restored.canResume(saved.requestId), false);
+   assert.equal(await restored.authorize('fresh-after-invalid-journal'), 'requested');
+   assert.equal(restored.cancel('fresh-after-invalid-journal'), true);
+ }
+ const Boundary = fresh(); const boundarySaved = { requestId: '😀'.repeat(64), transaction: 'fixture-tx', kind: 'authorization', state: '😀'.repeat(128) };
+ const boundary = Boundary.configure('host-app-id', { cacheDir: '/tmp' }, { load: () => boundarySaved, save() {} });
+ assert.equal(boundary.canResume(boundarySaved.requestId), true);
+ console.log('OHOS replay revoke/replace/re-register retains remaining filtered receipts once; UTF16 ID boundaries passed');
  console.log('OHOS cold process, SDK verification, trusted journal, late Kuikly listener, cancellation and replay checks passed');
  console.log('OHOS OAuth state, transaction, duplicate/late callbacks, concurrency, raw transfer encoding, URL validation and temporary file lifecycle passed');
 })().catch(e => { console.error(e); process.exitCode = 1; });

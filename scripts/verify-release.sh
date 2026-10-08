@@ -33,4 +33,4 @@ PYTHON
 )"
 tag_refs="$(git ls-remote --tags https://github.com/gycrosskit/wechat.git "refs/tags/$VERSION" "refs/tags/$VERSION^{}")"
 commit="$(printf '%s\n' "$tag_refs" | awk '$2 ~ /\^\{\}$/ {peeled=$1} {plain=$1} END {print peeled ? peeled : plain}')"
-python3 scripts/check-public-maven.py --repo wechat --version "$VERSION" --commit "$commit" --expected-publications "$publications" --output-dir "$output/public"
+python3 scripts/check-public-maven.py --repo wechat --version "$VERSION" --commit "$commit" --expected-publications "$publications" --output-dir "${CI_DIAGNOSTICS_DIR:-ci-diagnostics}/public"

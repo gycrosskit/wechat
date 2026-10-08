@@ -128,3 +128,20 @@ assert(invalidRestored.consumeAuthorization(invalidStore.saved?.state) == nil)
 assert(invalidRestored.begin("fresh", state: "fresh-state") == nil)
 assert(invalidRestored.consumeAuthorization("fresh-state") == "fresh")
 print("Swift pre-dispatch receipt rejection and invalid restoration admission passed")
+
+// String.count 的组合字符不能扩大与 Kotlin/ArkTS 相同的 UTF-16 公共上限。
+for id in [String(repeating: "😀", count: 65), String(repeating: "e\u{0301}", count: 65)] {
+    assert(WechatSession().begin(id, state: "state") == "invalid_content")
+}
+assert(WechatSession().begin(String(repeating: "😀", count: 64), state: String(repeating: "😀", count: 128)) == nil)
+for (id, state) in [(String(repeating: "😀", count: 65), "state"), ("id", String(repeating: "😀", count: 129))] {
+    let store = Store(); store.saved = WechatPendingAuthorization(requestID: id, state: state)
+    let restored = WechatSession(store: store)
+    assert(restored.consumeAuthorization(state) == nil)
+    assert(restored.begin("fresh", state: "fresh-state") == nil)
+}
+print("Swift request ID and trusted journal use UTF16 128/256 limits")
+
+let boundaryStore = Store()
+boundaryStore.saved = WechatPendingAuthorization(requestID: String(repeating: "😀", count: 64), state: String(repeating: "😀", count: 128))
+assert(WechatSession(store: boundaryStore).consumeAuthorization(boundaryStore.saved?.state) == String(repeating: "😀", count: 64))

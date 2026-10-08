@@ -8,6 +8,8 @@ contracts = source[source.index("public enum WechatScene"):source.index("/// 宿
 callback = source[source.index("    public func onResp("):source.index("    private func begin(")]
 image_share = source[source.index("    public func shareImage("):source.index("    /// Main 分享无凭据")]
 share = source[source.index("    private func share("):source.index("    private func send(")]
+listener_fields = source[source.index("    private var receipt:"):source.index("    private let registered:")]
+listener_methods = source[source.index("    public func attach("):source.index("    /// Main 将 URL")]
 output = root / "build/swift-receipt"
 output.mkdir(parents=True, exist_ok=True)
 (output / "main.swift").write_text("import Foundation\n" + contracts + """
@@ -106,6 +108,26 @@ print("Production Swift targeted/ordinary image requests, trusted identities, SD
 precondition(wechatText(String(repeating: "e\\u{0301}", count: 300), characters: 256, bytes: 512) == String(repeating: "e\\u{0301}", count: 128))
 precondition(wechatText("a😀", characters: 2, bytes: 512) == "a")
 print("Production Swift UTF-16 and UTF-8 text limits match Kotlin and OHOS")
+""")
+# 直接编译生产字段/方法，不重写回放算法；SDK只在既有分享探针中替身。
+with (output / "main.swift").open("a") as fixture:
+    fixture.write("class ListenerProbe {\n" + listener_fields + listener_methods + """
+    func seed(_ id: String) { deliver(WechatReceipt(requestID: id, kind: .authorization, errorCode: 0, authorizationCode: nil, pageResult: nil)) }
+}
+for mode in ["detach", "replace"] {
+    let replay = ListenerProbe(); replay.seed("a"); replay.seed("b"); replay.seed("c")
+    var old = [String](), next = [String]()
+    replay.attach { value in
+        old.append(value.requestID!)
+        replay.detach()
+        if mode == "replace" { replay.attach { next.append($0.requestID!) } }
+    }
+    precondition(old == ["a"])
+    if mode == "detach" { replay.attach { next.append($0.requestID!) } }
+    precondition(next == ["b", "c"])
+    replay.detach(); replay.attach { _ in preconditionFailure("receipt replayed twice") }
+}
+print("Production Swift replay detachment/replacement preserves remaining receipts exactly once")
 """)
 subprocess.run(["swiftc", str(root / "iosApp/Sources/GycWechatNative/WechatSession.swift"),
                 str(output / "main.swift"), "-o", str(output / "check")], check=True)

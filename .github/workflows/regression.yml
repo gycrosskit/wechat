@@ -7,26 +7,83 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: regression-${{ github.ref }}
-  cancel-in-progress: true
+  group: regression-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   JAVA_TOOL_OPTIONS: -Djava.security.properties=${{ github.workspace }}/scripts/ci-java.security
 jobs:
-  contracts:
+  changes:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5
+    outputs:
+      source: ${{ steps.changes.outputs.source }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - id: changes
+        timeout-minutes: 5
+        run: python3 scripts/ci-run.py --log ci-diagnostics/changes.log -- python3 scripts/ci-changes.py
+      - name: Save public CI diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-${{ github.workflow }}-changes-${{ github.run_attempt }}
+          path: |
+            ci-diagnostics/**/*.log
+            ci-diagnostics/**/*.json
+            ci-diagnostics/**/*.jsonl
+            ci-diagnostics/**/*.txt
+            **/build/test-results/**/*.xml
+          if-no-files-found: ignore
+          retention-days: 7
+  contracts:
+    needs: changes
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Require successful changes
+        timeout-minutes: 1
+        env:
+          CHECK_RESULT: ${{ needs.changes.result }}
+        run: |
+          mkdir -p ci-diagnostics
+          printf 'Prerequisite result=%s\n' "$CHECK_RESULT" | tee ci-diagnostics/prerequisite.log
+          test "$CHECK_RESULT" = success
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Check CI script syntax on main and docs-only changes
+        timeout-minutes: 5
+        run: |
+          PYTHONPYCACHEPREFIX="$RUNNER_TEMP/ci-pycache" python3 scripts/ci-run.py --log ci-diagnostics/ci-syntax.log -- bash -ec 'python3 -m compileall -q scripts; for script in scripts/*.sh; do bash -n "$script"; done'
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-      - run: |
-          python3 verification/ci/test_fork_host.py
-          python3 scripts/test-check-maven.py
-          python3 scripts/test-jitpack-metadata.py
+      - if: needs.changes.outputs.source == 'true'
+        timeout-minutes: 10
+        run: |
+          python3 scripts/ci-run.py --log ci-diagnostics/contracts-1.log -- python3 verification/ci/test_fork_host.py
+          python3 scripts/ci-run.py --log ci-diagnostics/contracts-2.log -- python3 scripts/test-check-maven.py
+          python3 scripts/ci-run.py --log ci-diagnostics/contracts-3.log -- python3 scripts/test-jitpack-metadata.py
+      - name: Save public CI diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-${{ github.workflow }}-contracts-${{ github.run_attempt }}
+          path: |
+            ci-diagnostics/**/*.log
+            ci-diagnostics/**/*.json
+            ci-diagnostics/**/*.jsonl
+            ci-diagnostics/**/*.txt
+            **/build/test-results/**/*.xml
+          if-no-files-found: ignore
+          retention-days: 7
   android:
+    needs: changes
+    if: needs.changes.outputs.source == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -39,23 +96,80 @@ jobs:
           java-version: '17'
           cache: gradle
       - run: bash scripts/ci-pin-fork-host.sh
-      - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" :wechat-core:jvmTest :wechat-core:testDebugUnitTest :wechat-core:compileReleaseKotlinAndroid --no-daemon --max-workers=1 --stacktrace --info
+        timeout-minutes: 5
+      - run: python3 scripts/ci-run.py --log ci-diagnostics/android-1.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" :wechat-core:jvmTest :wechat-core:testDebugUnitTest :wechat-core:compileReleaseKotlinAndroid --no-daemon --max-workers=1 --stacktrace --info
+        timeout-minutes: 40
+      - name: Save public CI diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-${{ github.workflow }}-android-${{ github.run_attempt }}
+          path: |
+            ci-diagnostics/**/*.log
+            ci-diagnostics/**/*.json
+            ci-diagnostics/**/*.jsonl
+            ci-diagnostics/**/*.txt
+            **/build/test-results/**/*.xml
+          if-no-files-found: ignore
+          retention-days: 7
   native:
+    needs: changes
+    if: needs.changes.outputs.source == 'true'
     runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+      - name: Restore complete Kotlin Native toolchains
+        id: konan-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.konan/kotlin-native-prebuilt-*
+            ~/.konan/dependencies
+            !~/.konan/dependencies/cache
+            !~/.konan/**/*.part
+            !~/.konan/**/*.tmp
+            !~/.konan/**/*.lock
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', '**/gradle.properties', '**/build.gradle.kts', '**/settings.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
       - run: bash scripts/ci-pin-fork-host.sh
-      - run: python3 tests/swift-receipt.py
-      - run: |
+        timeout-minutes: 5
+      - run: python3 scripts/ci-run.py --log ci-diagnostics/native-1.log -- python3 tests/swift-receipt.py
+        timeout-minutes: 15
+      - timeout-minutes: 40
+        run: |
           ios_test_target=iosSimulatorArm64Test
           if [[ "$(uname -m)" != arm64 ]]; then ios_test_target=iosX64Test; fi
-          bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" :wechat-core:"$ios_test_target" :wechat-core:compileKotlinIosArm64 :wechat-core:compileKotlinIosX64 :wechat-core:compileKotlinOhosArm64 :wechat-kuikly:compileKotlinOhosArm64 --no-daemon --max-workers=1 --stacktrace --info
+          python3 scripts/ci-run.py --log ci-diagnostics/native-2.log -- bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" :wechat-core:"$ios_test_target" :wechat-core:compileKotlinIosArm64 :wechat-core:compileKotlinIosX64 :wechat-core:compileKotlinOhosArm64 :wechat-kuikly:compileKotlinOhosArm64 --no-daemon --max-workers=1 --stacktrace --info
           python3 -c 'import pathlib, sys, xml.etree.ElementTree as ET; files=pathlib.Path(".").glob("**/build/test-results/"+sys.argv[1]+"/*.xml"); cases=[case for path in files for case in ET.parse(path).iter("testcase")]; assert any(case.find("skipped") is None for case in cases), "No executed iOS test cases"' "$ios_test_target"
+      - name: Save complete Kotlin Native toolchains
+        if: success() && steps.konan-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.konan/kotlin-native-prebuilt-*
+            ~/.konan/dependencies
+            !~/.konan/dependencies/cache
+            !~/.konan/**/*.part
+            !~/.konan/**/*.tmp
+            !~/.konan/**/*.lock
+          key: ${{ steps.konan-cache.outputs.cache-primary-key }}
+      - name: Save public CI diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-${{ github.workflow }}-native-${{ github.run_attempt }}
+          path: |
+            ci-diagnostics/**/*.log
+            ci-diagnostics/**/*.json
+            ci-diagnostics/**/*.jsonl
+            ci-diagnostics/**/*.txt
+            **/build/test-results/**/*.xml
+          if-no-files-found: ignore
+          retention-days: 7
