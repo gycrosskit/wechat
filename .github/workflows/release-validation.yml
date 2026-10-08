@@ -100,6 +100,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+      - name: Identify Native toolchain and Xcode
+        id: native-key
+        run: python3 scripts/ci-native-cache.py --key >> "$GITHUB_OUTPUT"
       - name: Restore complete Kotlin Native toolchains
         id: konan-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -111,7 +114,7 @@ jobs:
             !~/.konan/**/*.part
             !~/.konan/**/*.tmp
             !~/.konan/**/*.lock
-          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', '**/gradle.properties', '**/build.gradle.kts', '**/settings.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ steps.native-key.outputs.key }}
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin

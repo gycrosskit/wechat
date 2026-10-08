@@ -8,13 +8,9 @@ core 与原生client提供OAuth、图片/网页分享和商家转账确认页；
 
 当前测试覆盖、执行时点和未验收项集中见[验证范围](docs/功能与平台差异.md#验证范围)，复现命令见[开发与验证](docs/开发与验证.md)。
 
-native-0.1.5 已补齐 iOS 指定联系人图片分享，复用现用官方 SDK 2.0.7 的 `WXSceneSpecifiedSession` / `toUserOpenId` / `openID`。须同时提供当前 AppID 的可信接收者与发送者 openId；不降级为普通好友分享。已发布 `native-0.1.4` 不含此改动，详见 [本次修复验证](docs/指定联系人分享对齐.md)。
-
-iOS 已发布：`GycWechatNative` Pod内部版本0.1.4，使用独立不可变Git标签 `native-0.1.4`。真实 Git Pod/UIKit App 链接与 Swift Package/device 编译通过，标签及实际编译源码一致。该原生标签仅包含当时Swift空白OAuth code修复；此段为native-0.1.4历史结果；当前版本组合见本页前部。详见[原生发布验收](docs/native-0.1.4发布验收.md)与[完整源码审查](docs/完整源码审查.md)。
-
 微信 SDK 的 OAuth 授权、图片/网页分享和商家转账确认页入口，提供请求受理状态与 SDK 回执。账号换票、分享任务、订单查询及凭据由宿主负责；转账页面 `success` 不表示资金到账。
 
-Maven **0.1.5** 已发布 [prerelease](https://github.com/gycrosskit/wechat/releases/tag/0.1.5)，修复 Android 后台入口、取消及迟回执归属；SDK、可信存储、状态和 listener 回调串行到 Main。Release 归档重下载 SHA 与 JitPack 全制品审计通过；精确合并提交、校验值、渠道限制及独立消费状态见[0.1.5 验收](docs/0.1.5远程发布验收.md)。该Maven发布当时未修改 OHOS 原生协议，配套 HAR 固定 **0.1.4**（旧 0.1.3 不支持取消 ack）；Swift Package / Git Pod 已发布 **native-0.1.4**（Pod内部0.1.4，真实远程消费见原生验收）；已验0.1.3保留历史记录。历史结果见[0.1.4 远程验收](docs/0.1.4远程发布验收.md)。
+旧版本验收见 [native-0.1.4](docs/native-0.1.4发布验收.md)、[Maven 0.1.5](docs/0.1.5远程发布验收.md)与 [0.1.4](docs/0.1.4远程发布验收.md)；指定联系人合同见[接入指南](docs/接入指南.md#ios-原生与-kmp-接入)。
 
 ## 架构与调用流程
 
