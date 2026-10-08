@@ -1,6 +1,31 @@
 package io.github.gycrosskit.wechat
 import kotlin.test.*
 class WechatSessionTest {
+    @Test fun utf16BoundariesApplyToRequestIdsAndTrustedRestoration() {
+        for (id in listOf("😀".repeat(65), "e\u0301".repeat(65))) {
+            assertEquals(WechatStatus.INVALID_CONTENT, WechatSession().begin(id, "tx", WechatKind.AUTHORIZATION, "state"))
+        }
+        assertNull(WechatSession().begin("😀".repeat(64), "tx", WechatKind.AUTHORIZATION, "😀".repeat(128)))
+        val boundary = WechatPendingRequest("😀".repeat(64), "tx", WechatKind.AUTHORIZATION, "😀".repeat(128))
+        val boundaryStore = object : WechatRequestStore {
+            override fun load() = boundary
+            override fun save(request: WechatPendingRequest?) = Unit
+        }
+        assertEquals(boundary.requestId, WechatSession(boundaryStore).consume("tx", WechatKind.AUTHORIZATION, boundary.state)?.requestId)
+        for (record in listOf(
+            WechatPendingRequest("😀".repeat(65), "tx", WechatKind.AUTHORIZATION, "state"),
+            WechatPendingRequest("id", "tx", WechatKind.AUTHORIZATION, "😀".repeat(129)),
+        )) {
+            val store = object : WechatRequestStore {
+                override fun load() = record
+                override fun save(request: WechatPendingRequest?) = Unit
+            }
+            val session = WechatSession(store)
+            assertNull(session.consume(record.transaction, record.kind, record.state))
+            assertNull(session.begin("fresh", "fresh-tx", WechatKind.AUTHORIZATION, "fresh-state"))
+        }
+    }
+
     @Test fun rejectsUntrustedRestorationAndReusedTransactionsWithoutLosingCurrentRequest() {
         val invalidRecords = listOf(
             WechatPendingRequest(" ", "transaction", WechatKind.SHARE),

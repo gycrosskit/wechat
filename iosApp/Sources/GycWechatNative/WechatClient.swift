@@ -35,6 +35,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
     private let submitted: (String, String) -> Void
     private var receipt: ((WechatReceipt) -> Void)?
     private var receipts: [WechatReceipt] = []
+    private var listenerGeneration: UInt64 = 0
     private let registered: Bool
     private var callbackDigests = Set<String>()
     /// Main 注册一次 SDK；宿主传入 appID、HTTPS universalLink 和可选可信 journal。
@@ -54,11 +55,15 @@ public final class WechatClient: NSObject, WXApiDelegate {
     public func attach(_ listener: @escaping (WechatReceipt) -> Void) {
         precondition(Thread.isMainThread)
         receipt = listener
-        let buffered = receipts; receipts = []
-        buffered.forEach(listener)
+        listenerGeneration &+= 1
+        let generation = listenerGeneration
+        // 回调可同步撤销或替换 owner；未交付项保留给后继注册。
+        while listenerGeneration == generation && !receipts.isEmpty {
+            listener(receipts.removeFirst())
+        }
     }
     /// Main 撤销监听；在途等待保留，回执仍可暂存。
-    public func detach() { precondition(Thread.isMainThread); receipt = nil }
+    public func detach() { precondition(Thread.isMainThread); listenerGeneration &+= 1; receipt = nil }
     private func deliver(_ result: WechatReceipt) {
         if let receipt { receipt(result) } else {
             // ponytail: 最多缓存 64 笔，跨进程结果交付由宿主保存。

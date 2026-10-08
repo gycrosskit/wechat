@@ -2,9 +2,9 @@ import Foundation
 
 /// 同一 App 可信的授权等待记录；不从回跳 URL 构造或打印随机 state。
 public struct WechatPendingAuthorization {
-    /// 宿主非空唯一 ID，最多 128 个字符。
+    /// 宿主非空唯一 ID，最多 128 个 UTF-16 单元。
     public let requestID: String
-    /// 组件产生的非空随机 state，最多 256 个字符；仅用于回执关联。
+    /// 组件产生的非空随机 state，最多 256 个 UTF-16 单元；仅用于回执关联。
     public let state: String
     /// 构造可信快照；Session 在加载或开始时核验长度和非空。
     public init(requestID: String, state: String) { self.requestID = requestID; self.state = state }
@@ -37,12 +37,12 @@ final class WechatSession {
         } catch { restorationFailed = true }
     }
     private static func valid(_ request: WechatPendingAuthorization) -> Bool {
-        !request.requestID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && request.requestID.count <= 128 &&
-            !request.state.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && request.state.count <= 256
+        !request.requestID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && request.requestID.utf16.count <= 128 &&
+            !request.state.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && request.state.utf16.count <= 256
     }
     func begin(_ id: String, state: String? = nil, sharing: Bool = false) -> String? {
         guard !restorationFailed else { return "failed" }
-        guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, id.count <= 128, !usedIDs.contains(id) else { return "invalid_content" }
+        guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, id.utf16.count <= 128, !usedIDs.contains(id) else { return "invalid_content" }
         if sharing && shareQuarantined { return "unsupported" }
         guard submitting == nil, authorization == nil, share == nil else { return "busy" }
         usedIDs.insert(id)

@@ -21,6 +21,7 @@ export interface WechatRequestStore {
 interface Pending { id: string; transaction: string; kind: string; state: string; path: string; cancelled: boolean; }
 interface PageResult { result?: string; }
 type Listener = (receipt: WechatReceipt) => void;
+interface ListenerRegistration { ids: Set<string> | null; }
 class QuietLog implements wx.LogInterface { print(_level: wx.LogLevel, _tag: string, _message: string): void {} }
 
 /** 宿主配置一次后，认证、分享和 EntryAbility 回跳共用同一 SDK 入口。 */
@@ -33,7 +34,7 @@ export class WechatClient implements wx.WXApiEventHandler {
   private usedTransactions: Set<string> = new Set();
   private pending: Pending | null = null;
   private usedIds: Set<string> = new Set();
-  private listeners: Map<Listener, Set<string> | null> = new Map();
+  private listeners: Map<Listener, ListenerRegistration> = new Map();
   private appId: string;
   private context: common.UIAbilityContext;
   private constructor(appId: string, context: common.UIAbilityContext, store: WechatRequestStore | null) {
@@ -71,10 +72,15 @@ export class WechatClient implements wx.WXApiEventHandler {
   canResume(id: string): boolean { return this.pending?.id === id || this.receipts.some((receipt: WechatReceipt) => receipt.requestId === id); }
   /** UI 线程附着回执监听；ids 为 null 接收全部，否则只交付指定 owner 的 ID。 */
   addListener(listener: Listener, ids: Set<string> | null = null): void {
-    this.listeners.set(listener, ids);
-    const ready = this.receipts.filter((receipt: WechatReceipt) => !ids || ids.has(receipt.requestId));
-    this.receipts = this.receipts.filter((receipt: WechatReceipt) => ids !== null && !ids.has(receipt.requestId));
-    ready.forEach((receipt: WechatReceipt) => listener(receipt));
+    const registration: ListenerRegistration = { ids };
+    this.listeners.set(listener, registration);
+    // 逐条移出缓冲，撤销/同函数重注册后不再调用旧 owner，也不丢其余项。
+    while (this.listeners.get(listener) === registration) {
+      const index = this.receipts.findIndex((receipt: WechatReceipt) => !ids || ids.has(receipt.requestId));
+      if (index < 0) { break; }
+      const receipt = this.receipts.splice(index, 1)[0];
+      listener(receipt);
+    }
   }
   /** 移除指定监听，不取消在途请求。 */
   removeListener(listener: Listener): void { this.listeners.delete(listener); }
@@ -101,8 +107,12 @@ export class WechatClient implements wx.WXApiEventHandler {
     this.pending = null;
     this.removeFile(current.path);
     let delivered = false;
-    this.listeners.forEach((ids: Set<string> | null, listener: Listener) => {
-      if (!ids || ids.has(result.requestId)) { delivered = true; listener(result); }
+    // Map 原地重注册会被 live 遍历再次访问；当前回执只交投递开始时的注册。
+    const listeners = new Map(this.listeners);
+    listeners.forEach((registration: ListenerRegistration, listener: Listener) => {
+      if (this.listeners.get(listener) === registration && (!registration.ids || registration.ids.has(result.requestId))) {
+        delivered = true; listener(result);
+      }
     });
     if (!delivered) {
       // ponytail: 最多缓存 64 笔；跨进程结果交付由宿主业务存储承担。

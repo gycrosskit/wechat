@@ -1,6 +1,6 @@
 {
   "name": "@gycrosskit/wechat-native",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "微信 OAuth、分享和商家转账确认页 SDK 入口",
   "main": "Index.ets",
   "author": {
