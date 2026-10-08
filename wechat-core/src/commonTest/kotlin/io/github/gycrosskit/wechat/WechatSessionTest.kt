@@ -124,5 +124,7 @@ class WechatShareContentTest {
         kotlin.test.assertTrue(emoji.encodeToByteArray().size <= 512)
         kotlin.test.assertFalse(emoji.last().isHighSurrogate())
         kotlin.test.assertEquals("", wechatText("", 256, 512))
+        kotlin.test.assertEquals("e\u0301".repeat(128), wechatText("e\u0301".repeat(300), 256, 512))
+        kotlin.test.assertEquals("a", wechatText("a😀", 2, 512))
     }
 }

@@ -50,6 +50,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - run: python3 tests/swift-receipt.py
       - run: |
           ios_test_target=iosSimulatorArm64Test
           if [[ "$(uname -m)" != arm64 ]]; then ios_test_target=iosX64Test; fi

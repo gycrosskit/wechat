@@ -49,6 +49,9 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  client.onResp(response(wx.SendAuthResp, slowReq, { state: slowReq.state, code: 'late' })); assert.equal(receipts.at(-1).requestId, 'new');
  assert.equal(await client.shareWebPage('url-invalid', 'javascript:alert(1)', '', '', 'aA==', 'session'), 'invalid_content');
  assert.equal(await client.shareWebPage('url-creds', 'https://user:pw@example.com', '', '', 'aA==', 'session'), 'invalid_content');
+ const beforeOversizedUrl = sent.length;
+ assert.equal(await client.shareWebPage('url-utf8-limit', 'https://example.com/' + '中'.repeat(3500), '', '', 'aA==', 'session'), 'invalid_content');
+ assert.equal(sent.length, beforeOversizedUrl, '10 KiB URL limit counts UTF-8 bytes before SDK submission');
  const sendsBeforeRecipient = sent.length;
  assert.equal(await client.shareImage('recipient', 'aA==', 'session', 'trusted-recipient', 'trusted-sender'), 'unsupported');
  assert.equal(await client.shareImage('recipient-timeline', 'aA==', 'timeline', 'trusted-recipient'), 'invalid_content');
@@ -58,6 +61,8 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  assert.equal(chinese.message.title, '中'.repeat(170)); client.onResp(response(wx.SendMessageToWXResp, chinese));
  assert.equal(await client.shareWebPage('ascii', 'https://example.com', 'a'.repeat(300), 'b'.repeat(600), 'aA==', 'session'), 'requested');
  const ascii = sent.at(-1); assert.equal(ascii.message.title.length, 256); assert.equal(ascii.message.description.length, 512); client.onResp(response(wx.SendMessageToWXResp, ascii));
+ assert.equal(client.text('e\u0301'.repeat(300), 256, 512), 'e\u0301'.repeat(128));
+ assert.equal(client.text('a😀', 2, 512), 'a');
  assert.equal(await client.shareImage('oversize', Buffer.alloc(25 * 1024 * 1024 + 1).toString('base64'), 'session'), 'invalid_content');
  assert.equal(await client.shareImage('image-invalid', 'bad', 'session'), 'invalid_content');
  assert.equal(await client.shareWebPage('25m', 'https://example.com', '', '', Buffer.alloc(25 * 1024 * 1024).toString('base64'), 'session'), 'requested');
