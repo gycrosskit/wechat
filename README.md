@@ -156,7 +156,7 @@ pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag 
 
 Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-0.1.5`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，未发布到 CocoaPods Specs。
 
-HarmonyOS 0.1.4 的 OHPM `next` 发布已接受并 under review；精确版本查询仍为 NOTFOUND，Registry 安装尚未通过。以下命令仅在审核上架后使用。审核期间可按 Release SHA 固定下载独立原生包：
+HarmonyOS 此版使用 HAR `0.1.5`，精确 Registry 可安装性见顶部发布记录。Registry 审核通过前按 Release SHA 固定下载独立原生包，审核受理不等于已上架：
 
 ```sh
 ohpm install @gycrosskit/wechat-native@0.1.5
