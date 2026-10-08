@@ -19,6 +19,7 @@ env:
   VERSION: ${{ github.event.release.tag_name || inputs.version || '0.1.5' }}
 jobs:
   release-android:
+    if: ${{ github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'native-') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -30,9 +31,12 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - run: bash scripts/ci-pin-fork-host.sh
       - run: bash scripts/verify-release.sh
+      - run: bash scripts/ci-pin-fork-host.sh
       - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" -p verification/gradle "-PwechatVersion=$VERSION"  compileDebugKotlinAndroid --refresh-dependencies --no-daemon --max-workers=1 --stacktrace --info
   release-native:
+    if: ${{ github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'native-') }}
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -44,6 +48,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - run: bash scripts/ci-pin-fork-host.sh
       - run: bash scripts/verify-release.sh
       - run: |
           ios_framework_target=IosSimulatorArm64

@@ -238,14 +238,14 @@ export class WechatClient implements wx.WXApiEventHandler {
       (request.kind === 'share' || request.kind === 'merchant_transfer') && request.state === '');
   }
   private text(value: string, characters: number, bytes: number): string {
-    let text = Array.from(value).slice(0, characters).join('');
+    let text = value.slice(0, characters);
     const encoder = new util.TextEncoder();
-    while (encoder.encodeInto(text).length > bytes) { text = Array.from(text).slice(0, -1).join(''); }
+    while (encoder.encodeInto(text).length > bytes || /[\uD800-\uDBFF]$/.test(text)) { text = text.slice(0, -1); }
     return text;
   }
   private validScene(scene: string): boolean { return scene === 'session' || scene === 'timeline'; }
   private validUrl(address: string): boolean {
-    if (typeof address !== 'string' || address.length > 10 * 1024) { return false; }
+    if (typeof address !== 'string' || new util.TextEncoder().encodeInto(address).length > 10 * 1024) { return false; }
     try { const u = new url.URL(address); return (u.protocol === 'https:' || u.protocol === 'http:') && !!u.hostname && !u.username && !u.password; } catch (_) { return false; }
   }
   private encode(value: string): string { return encodeURIComponent(value).replace(/[!'()*]/g, (s: string) => `%${s.charCodeAt(0).toString(16).toUpperCase()}`); }

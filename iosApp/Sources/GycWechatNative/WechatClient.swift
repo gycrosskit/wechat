@@ -90,13 +90,13 @@ public final class WechatClient: NSObject, WXApiDelegate {
         request.state = state
         send(request, id: requestID)
     }
-    /// Main 分享编码图片，最大 25 MiB；iOS 不保证指定联系人支持，因此非空目标拒绝而不降级。
+    /// Main 分享编码图片，最大 25 MiB；指定联系人使用同 App 的可信双方 openId，不降级普通好友。
     public func shareImage(requestID: String, data: Data, scene: WechatScene, recipientID: String? = nil, senderOpenID: String? = nil) {
         precondition(Thread.isMainThread)
         guard begin(requestID, sharing: true) else { return }
         if let recipientID {
-            // 通用 isWXAppSupport 无法证明客户端支持指定联系人，不能静默降级。
-            reject(requestID, recipientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || scene != .session ? "invalid_content" : "unsupported"); return
+            guard !recipientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, scene == .session else { reject(requestID, "invalid_content"); return }
+            guard senderOpenID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { reject(requestID, "unsupported"); return }
         }
         guard !data.isEmpty, data.count <= 25 * 1024 * 1024, let thumb = Self.thumbnail(data) else { reject(requestID, "invalid_content"); return }
         let image = WXImageObject()
@@ -104,7 +104,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
         let message = WXMediaMessage()
         message.mediaObject = image
         message.thumbData = thumb
-        share(message, id: requestID, scene: scene)
+        share(message, id: requestID, scene: scene, recipientID: recipientID, senderOpenID: senderOpenID)
     }
     /// Main 分享无凭据 HTTP(S) 页面；标题/描述限制同时按字符和 UTF-8 字节截断。
     public func shareWebPage(requestID: String, url: String, title: String, description: String, thumbnail: Data, scene: WechatScene) {
@@ -163,11 +163,16 @@ public final class WechatClient: NSObject, WXApiDelegate {
         return true
     }
     private func reject(_ id: String, _ status: String) { _ = session.cancel(id); submitted(id, status) }
-    private func share(_ message: WXMediaMessage, id: String, scene: WechatScene) {
+    private func share(_ message: WXMediaMessage, id: String, scene: WechatScene, recipientID: String? = nil, senderOpenID: String? = nil) {
         let request = SendMessageToWXReq()
         request.bText = false
         request.message = message
         request.scene = scene == .timeline ? Int32(WXSceneTimeline.rawValue) : Int32(WXSceneSession.rawValue)
+        if let recipientID {
+            request.scene = Int32(WXSceneSpecifiedSession.rawValue)
+            request.toUserOpenId = recipientID
+            request.openID = senderOpenID ?? ""
+        }
         send(request, id: id)
     }
     private func send(_ request: BaseReq, id: String) {

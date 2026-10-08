@@ -94,9 +94,16 @@ final class WechatSession {
     }
 }
 
-/** 先沿用宿主字符上限，再按厂商 UTF-8 字节上限截断，保留完整字符。 */
+/** 与 Kotlin 同样按 UTF-16 上限截断，再满足厂商 UTF-8 字节上限，保留完整 surrogate。 */
 func wechatText(_ value: String, characters: Int, bytes: Int) -> String {
-    var text = String(value.prefix(characters))
-    while text.utf8.count > bytes { text.removeLast() }
-    return text
+    let source = value as NSString
+    var end = min(characters, source.length)
+    while end > 0 {
+        if !(0xD800...0xDBFF).contains(source.character(at: end - 1)) {
+            let text = source.substring(to: end)
+            if text.utf8.count <= bytes { return text }
+        }
+        end -= 1
+    }
+    return ""
 }

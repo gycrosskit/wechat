@@ -1,10 +1,20 @@
 # GY CrossKit Wechat
 
-iOS 已发布：`GycWechatNative` Pod内部版本0.1.4，使用独立不可变Git标签 `native-0.1.4`。真实 Git Pod/UIKit App 链接与 Swift Package/device 编译通过，标签及实际编译源码一致。本轮仅Swift空白OAuth code修复，不产生新Maven坐标；Maven0.1.5/HAR0.1.4保留。详见[原生发布验收](docs/native-0.1.4发布验收.md)与[完整源码审查](docs/完整源码审查.md)。
+## 当前功能与平台边界
+
+core 与原生client提供OAuth、图片/网页分享和商家转账确认页；无CMP UI，wechat-kuikly仅OHOS Module。当前候选iOS2.0.7支持指定联系人图片分享，OHOS1.0.23不支持。
+
+适用版本：Maven 0.1.6；Swift Package / Git Pod native-0.1.5（Pod内部0.1.5）；HAR 0.1.5。本次修复与平台边界见[功能与平台差异](docs/功能与平台差异.md)，构建与渠道验收见[版本发布记录](https://github.com/gycrosskit/wechat/releases/tag/0.1.6)；下方旧版本记录保留其历史范围。
+
+当前测试覆盖、执行时点和未验收项集中见[验证范围](docs/功能与平台差异.md#验证范围)，复现命令见[开发与验证](docs/开发与验证.md)。
+
+native-0.1.5 已补齐 iOS 指定联系人图片分享，复用现用官方 SDK 2.0.7 的 `WXSceneSpecifiedSession` / `toUserOpenId` / `openID`。须同时提供当前 AppID 的可信接收者与发送者 openId；不降级为普通好友分享。已发布 `native-0.1.4` 不含此改动，详见 [本次修复验证](docs/指定联系人分享对齐.md)。
+
+iOS 已发布：`GycWechatNative` Pod内部版本0.1.4，使用独立不可变Git标签 `native-0.1.4`。真实 Git Pod/UIKit App 链接与 Swift Package/device 编译通过，标签及实际编译源码一致。该原生标签仅包含当时Swift空白OAuth code修复；此段为native-0.1.4历史结果；当前版本组合见本页前部。详见[原生发布验收](docs/native-0.1.4发布验收.md)与[完整源码审查](docs/完整源码审查.md)。
 
 微信 SDK 的 OAuth 授权、图片/网页分享和商家转账确认页入口，提供请求受理状态与 SDK 回执。账号换票、分享任务、订单查询及凭据由宿主负责；转账页面 `success` 不表示资金到账。
 
-Maven **0.1.5** 已发布 [prerelease](https://github.com/gycrosskit/wechat/releases/tag/0.1.5)，修复 Android 后台入口、取消及迟回执归属；SDK、可信存储、状态和 listener 回调串行到 Main。Release 归档重下载 SHA 与 JitPack 全制品审计通过；精确合并提交、校验值、渠道限制及独立消费状态见[0.1.5 验收](docs/0.1.5远程发布验收.md)。本轮未修改 OHOS 原生协议，配套 HAR 继续固定 **0.1.4**（旧 0.1.3 不支持取消 ack）；Swift Package / Git Pod 已发布 **native-0.1.4**（Pod内部0.1.4，真实远程消费见原生验收）；已验0.1.3保留历史记录。历史结果见[0.1.4 远程验收](docs/0.1.4远程发布验收.md)。
+Maven **0.1.5** 已发布 [prerelease](https://github.com/gycrosskit/wechat/releases/tag/0.1.5)，修复 Android 后台入口、取消及迟回执归属；SDK、可信存储、状态和 listener 回调串行到 Main。Release 归档重下载 SHA 与 JitPack 全制品审计通过；精确合并提交、校验值、渠道限制及独立消费状态见[0.1.5 验收](docs/0.1.5远程发布验收.md)。该Maven发布当时未修改 OHOS 原生协议，配套 HAR 固定 **0.1.4**（旧 0.1.3 不支持取消 ack）；Swift Package / Git Pod 已发布 **native-0.1.4**（Pod内部0.1.4，真实远程消费见原生验收）；已验0.1.3保留历史记录。历史结果见[0.1.4 远程验收](docs/0.1.4远程发布验收.md)。
 
 ## 架构与调用流程
 
@@ -98,7 +108,7 @@ classDiagram
     WechatListener ..> WechatReceipt
 ```
 
-源码入口：[公共契约与回执](wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatClient.kt)、[Android SDK 接线](wechat-core/src/androidMain/kotlin/io/github/gycrosskit/wechat/AndroidWechatClient.kt)、[Kotlin pending](wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatSession.kt)、[iOS KMP 桥](wechat-core/src/iosMain/kotlin/io/github/gycrosskit/wechat/IosWechatClient.kt)、[Swift client](iosApp/Sources/GycWechatNative/WechatClient.swift)、[Swift 分享隔离](iosApp/Sources/GycWechatNative/WechatSession.swift)、[Kuikly 取消确认与 dispose](wechat-kuikly/src/commonMain/kotlin/io/github/gycrosskit/wechat/kuikly/WechatModule.kt)、[OHOS client](ohos/wechat-native/src/main/ets/WechatClient.ets)。指定联系人图片分享只有 Android 实现，iOS/OHOS 返回不支持；转账页回执不是到账证明。
+源码入口：[公共契约与回执](wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatClient.kt)、[Android SDK 接线](wechat-core/src/androidMain/kotlin/io/github/gycrosskit/wechat/AndroidWechatClient.kt)、[Kotlin pending](wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatSession.kt)、[iOS KMP 桥](wechat-core/src/iosMain/kotlin/io/github/gycrosskit/wechat/IosWechatClient.kt)、[Swift client](iosApp/Sources/GycWechatNative/WechatClient.swift)、[Swift 分享隔离](iosApp/Sources/GycWechatNative/WechatSession.swift)、[Kuikly 取消确认与 dispose](wechat-kuikly/src/commonMain/kotlin/io/github/gycrosskit/wechat/kuikly/WechatModule.kt)、[OHOS client](ohos/wechat-native/src/main/ets/WechatClient.ets)。指定联系人图片分享已在 Android 和当前 iOS 源码实现，OHOS 官方 SDK 1.0.23 未公开接收者字段，仍返回不支持；转账页回执不是到账证明。
 
 ## 支持范围
 
@@ -133,26 +143,26 @@ dependencyResolutionManagement {
     }
 }
 // commonMain.dependencies
-implementation("com.github.gycrosskit.wechat:wechat-core:0.1.5")
+implementation("com.github.gycrosskit.wechat:wechat-core:0.1.6")
 // OHOS Kuikly 宿主额外添加：
-implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.5")
+implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.6")
 ```
 
 iOS 选择 Git Pod，或 Xcode 的 Swift Package：
 
 ```ruby
-pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-0.1.4'
+pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-0.1.5'
 ```
 
-Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-0.1.4`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，未发布到 CocoaPods Specs。
+Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-0.1.5`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，未发布到 CocoaPods Specs。
 
-HarmonyOS 0.1.4 的 OHPM `next` 发布已接受并 under review；精确版本查询仍为 NOTFOUND，Registry 安装尚未通过。以下命令仅在审核上架后使用。审核期间可按 Release SHA 固定下载独立原生包：
+HarmonyOS 此版使用 HAR `0.1.5`，精确 Registry 可安装性见顶部发布记录。Registry 审核通过前按 Release SHA 固定下载独立原生包，审核受理不等于已上架：
 
 ```sh
-ohpm install @gycrosskit/wechat-native@0.1.4
+ohpm install @gycrosskit/wechat-native@0.1.5
 ```
 
-[Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.4) 已提供 `WechatNative.har` 和 SHA-256，供校验及文件依赖使用；不要以旧 0.1.0 替代新增 API。
+[此版 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.6) 提供 HAR `0.1.5` 的 `WechatNative.har` 和 SHA-256，供校验及文件依赖使用；不要以旧 0.1.0 替代新增 API。
 
 ## 最小接入
 
@@ -181,7 +191,7 @@ OHOS 在 EntryAbility 配置 `WechatClient.configure(appId, context, trustedStor
 - `REQUESTED` 只表示 SDK 受理。Android/OHOS 按 transaction、类型和 OAuth state 验证回执；iOS 分享没有 transaction，`requestId == nil`，`SINGLE_PENDING` 只是当前单笔任务的本地候选，不能当成 SDK 准确关联或资金凭据。
 - iOS 分享在回执前保持 `BUSY`；SDK 已发送后取消，会隔离本实例后续分享并返回 `UNSUPPORTED`，防止迟回执误认。不得在同进程重建客户端绕过；OAuth 与转账仍可使用。
 - 冷启动恢复需要宿主提供同步原子可信 store，发送前保存、消费/取消前清除。不能从 Intent/Want/URL 生成恢复记录；iOS 只恢复 OAuth。归一回执的迟监听缓存仅限当前进程，业务服务端仍需兜底。
-- 图片最大 25 MiB，缩略图最大 32 KiB；Android 大于 10 MiB 需满足专用客户端版本门槛。指定联系人仅 Android 支持，需同 App 可信接收者和发送者 openId 及 SDK 版本门槛；iOS/OHOS 返回不支持，不降级普通好友。
+- 图片最大 25 MiB，缩略图最大 32 KiB；Android 大于 10 MiB 需满足专用客户端版本门槛。指定联系人由 Android 和当前 iOS 源码支持，需同 App 可信接收者和发送者 openId；Android 保留 SDK 客户端版本门槛，iOS 使用官方场景及收件人字段并等待真实 SDK 受理/回执。OHOS 仍不支持，不降级普通好友；iOS 最低客户端条件及真实发送待设备验收。
 - 凭据、state、Code、原始回跳与商户参数不得写入日志。`cancel` 只能结束本地等待；库不实现普通 `PayReq` APP 支付。
 
 各平台的存储失败、取消、图片资源及重复回执处理详见接入指南。实际微信客户端、签名回跳、Universal Link 与转账兼容性需要设备验收，编译通过不代表业务成功。

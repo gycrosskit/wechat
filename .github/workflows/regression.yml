@@ -23,6 +23,7 @@ jobs:
         with:
           node-version: '22'
       - run: |
+          python3 verification/ci/test_fork_host.py
           python3 scripts/test-check-maven.py
           python3 scripts/test-jitpack-metadata.py
   android:
@@ -37,6 +38,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - run: bash scripts/ci-pin-fork-host.sh
       - run: bash gradlew --init-script "$PWD/scripts/ci-repositories.gradle" :wechat-core:jvmTest :wechat-core:testDebugUnitTest :wechat-core:compileReleaseKotlinAndroid --no-daemon --max-workers=1 --stacktrace --info
   native:
     runs-on: macos-15
@@ -50,6 +52,8 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - run: bash scripts/ci-pin-fork-host.sh
+      - run: python3 tests/swift-receipt.py
       - run: |
           ios_test_target=iosSimulatorArm64Test
           if [[ "$(uname -m)" != arm64 ]]; then ios_test_target=iosX64Test; fi
