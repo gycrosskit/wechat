@@ -162,7 +162,7 @@ HarmonyOS 0.1.4 的 OHPM `next` 发布已接受并 under review；精确版本�
 ohpm install @gycrosskit/wechat-native@0.1.5
 ```
 
-[Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.4) 已提供 `WechatNative.har` 和 SHA-256，供校验及文件依赖使用；不要以旧 0.1.0 替代新增 API。
+[此版 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.6) 提供 HAR `0.1.5` 的 `WechatNative.har` 和 SHA-256，供校验及文件依赖使用；不要以旧 0.1.0 替代新增 API。
 
 ## 最小接入
 
