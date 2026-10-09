@@ -1,10 +1,12 @@
 # GY CrossKit Wechat
 
+本版：Maven `0.1.8`、Git Pod `native-0.1.7`（内部 `0.1.7`），HAR 不变。新增 Android/iOS Kuikly Native Module receiver 与平台变体；已发布 Maven `0.1.7` 不包含此能力。iOS receiver 从可选 `GycWechatNative/Kuikly` Git Pod subspec 导出，默认 Native Pod / Wechat SPM 不自动依赖 Kuikly。具体发布与远程验收结果见[对应 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.8)。接线见[接入指南的 Native receiver](docs/接入指南.md#androidios-kuikly-native-receiver)。
+
 ## 当前功能与平台边界
 
-core 与原生client提供OAuth、图片/网页分享和商家转账确认页；无CMP UI，wechat-kuikly仅OHOS Module。iOS2.0.7支持指定联系人图片分享，OHOS1.0.23不支持。
+core 与原生client提供OAuth、图片/网页分享和商家转账确认页；无CMP UI，wechat-kuikly源码提供Android/iOS/OHOS发送端及原生receiver。iOS2.0.7支持指定联系人图片分享，OHOS1.0.23不支持。
 
-适用版本：Maven 0.1.7；Swift Package / Git Pod native-0.1.6（Pod内部0.1.6）；HAR 0.1.6。本次修复与平台边界见[功能与平台差异](docs/功能与平台差异.md)，构建与渠道验收见[版本发布记录](https://github.com/gycrosskit/wechat/releases/tag/0.1.7)；下方旧版本记录保留其历史范围。
+2026-10-08 历史基线：Maven 0.1.7；Swift Package / Git Pod native-0.1.6（Pod内部0.1.6）；HAR 0.1.6。该基线修复与平台边界见[功能与平台差异](docs/功能与平台差异.md)，构建与渠道验收见[版本发布记录](https://github.com/gycrosskit/wechat/releases/tag/0.1.7)；下方旧版本记录保留其历史范围。
 
 当前测试覆盖、执行时点和未验收项集中见[验证范围](docs/功能与平台差异.md#验证范围)，复现命令见[开发与验证](docs/开发与验证.md)。
 
@@ -113,7 +115,7 @@ classDiagram
 | `wechat-core` | Android API 24；iOS 15；OHOS KMP 桥 | Android 微信 SDK 6.8.34；iOS 使用原生桥 |
 | `GycWechatNative` | iOS 15，Swift / Git Pod | WechatOpenSDK-XCFramework 2.0.7 |
 | `@gycrosskit/wechat-native` | HarmonyOS API 22 | @tencent/wechat_open_sdk 1.0.23 |
-| `wechat-kuikly` | OHOS Kuikly Module | Kuikly core 2.28.0-2.0.21-ohos、render 2.28.0 |
+| `wechat-kuikly` | 0.1.8含Android/iOS/OHOS Kuikly Module；已发布0.1.7仅OHOS | Kuikly core 2.28.0-2.0.21-ohos、render 2.28.0 |
 
 KMP 使用 Kotlin **2.2.21-1.0.0** OHOS 工具链。KMP 产物和 HAR 是独立渠道；KMP 依赖不能代替原生 SDK 注册、回跳与签名配置。
 
@@ -139,18 +141,18 @@ dependencyResolutionManagement {
     }
 }
 // commonMain.dependencies
-implementation("com.github.gycrosskit.wechat:wechat-core:0.1.7")
-// OHOS Kuikly 宿主额外添加：
-implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.7")
+implementation("com.github.gycrosskit.wechat:wechat-core:0.1.8")
+// Android/iOS/OHOS Kuikly 宿主额外添加：
+implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.8")
 ```
 
 iOS 选择 Git Pod，或 Xcode 的 Swift Package：
 
 ```ruby
-pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-0.1.6'
+pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-0.1.7'
 ```
 
-Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-0.1.6`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，未发布到 CocoaPods Specs。
+Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-0.1.7`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，Git Pod 不通过 CocoaPods Specs 分发。Native SPM 与 Pod 二选一；使用 `/Kuikly` subspec 时由其包含 Native，不再额外打包同名 SPM 产品。
 
 HarmonyOS 此版使用 HAR `0.1.6`，精确 Registry 可安装性见顶部发布记录。Registry 审核通过前按 Release SHA 固定下载独立原生包，审核受理不等于已上架：
 

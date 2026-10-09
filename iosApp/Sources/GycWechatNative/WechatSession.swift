@@ -78,6 +78,7 @@ final class WechatSession {
         authorization = nil
         return auth.requestID
     }
+    func canResume(_ id: String) -> Bool { authorization?.requestID == id }
     func cancel(_ id: String) -> Bool {
         let active = submitting == id || authorization?.requestID == id || share == id
         if authorization?.requestID == id {

@@ -16,6 +16,24 @@ class WechatModuleCancelTest {
         put("requestId", id); put("kind", "authorization"); put("errorCode", 0); put("authorizationCode", "code")
     }
 
+    @Test fun iosCandidateDoesNotBecomeVerifiedRequestId() {
+        val module = WechatModule(); val listener = Listener(); module.attach(listener)
+        module.calls.single().deliver(JSONObject().apply {
+            put("kind", "share"); put("errorCode", 0); put("candidateRequestId", "candidate"); put("attribution", "SINGLE_PENDING")
+        })
+        val value = listener.receipts.single()
+        assertNull(value.requestId); assertEquals("candidate", value.candidateRequestId)
+        assertEquals(WechatAttribution.SINGLE_PENDING, value.attribution)
+        module.dispose()
+    }
+
+    @Test fun explicitUnknownAttributionIsNeverPromotedToVerified() {
+        val module = WechatModule(); val listener = Listener(); module.attach(listener)
+        module.calls.single().deliver(receipt("id").apply { put("attribution", "future_unknown") })
+        assertEquals(WechatAttribution.UNATTRIBUTED, listener.receipts.single().attribution)
+        module.dispose()
+    }
+
     @Test fun failedCancelRetainsSubmissionAndLateReceiptWithoutFalseTerminalStatus() {
         val module = WechatModule(); val listener = Listener(); module.attach(listener)
         val listen = module.calls.single(); module.authorize("original")

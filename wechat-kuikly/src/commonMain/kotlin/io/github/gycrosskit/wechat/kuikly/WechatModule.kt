@@ -29,7 +29,17 @@ class WechatModule : Module(), WechatClient {
                 "merchant_transfer" -> WechatKind.MERCHANT_TRANSFER
                 else -> return@toNative
             }
-            this.listener?.onReceipt(WechatReceipt(payload.optString("requestId"), kind, payload.optInt("errorCode"), payload.optString("authorizationCode").takeIf(String::isNotBlank), payload.optString("pageResult").takeIf(String::isNotBlank)))
+            val requestId = payload.optString("requestId").takeIf(String::isNotBlank)
+            val attribution = when (payload.optString("attribution")) {
+                "SINGLE_PENDING" -> WechatAttribution.SINGLE_PENDING
+                "UNATTRIBUTED" -> WechatAttribution.UNATTRIBUTED
+                "VERIFIED" -> WechatAttribution.VERIFIED
+                "" -> if (requestId != null) WechatAttribution.VERIFIED else WechatAttribution.UNATTRIBUTED
+                else -> WechatAttribution.UNATTRIBUTED
+            }
+            this.listener?.onReceipt(WechatReceipt(requestId, kind, payload.optInt("errorCode"),
+                payload.optString("authorizationCode").takeIf(String::isNotBlank), payload.optString("pageResult").takeIf(String::isNotBlank),
+                payload.optString("candidateRequestId").takeIf(String::isNotBlank), attribution))
         }, false).callbackRef
     }
     override fun authorize(requestId: String) = call(requestId, "authorize", JSONObject())

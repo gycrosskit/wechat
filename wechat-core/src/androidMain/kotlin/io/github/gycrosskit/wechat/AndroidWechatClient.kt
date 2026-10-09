@@ -35,6 +35,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
     private val queued = mutableMapOf<String, Request>()
     private val cancelledBeforeBegin = mutableSetOf<String>()
     private var currentRequest: Request? = null
+    private val moduleListeners = mutableMapOf<WechatListener, Set<String>>()
     private val receipts = mutableListOf<Pair<WechatListener?, WechatReceipt>>()
     private val application = context.applicationContext
     private val api by lazy { checkMain(); WXAPIFactory.createWXAPI(application, appId, true) }
@@ -64,6 +65,30 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
     fun detach() {
         desiredOwner = null
         onMain { if (desiredOwner == null) activeOwner = null }
+    }
+    /** Main：Renderer 只观察自己持有的 ID，不替换宿主 attach listener。ids 由该 Renderer 在 Main 维护。 */
+    fun addModuleListener(listener: WechatListener, ids: Set<String>) {
+        checkMain()
+        moduleListeners[listener] = ids
+        for (entry in receipts.toList()) {
+            if (moduleListeners[listener] !== ids) break
+            if (entry.second.requestId in ids) {
+                receipts.remove(entry)
+                listener.onReceipt(entry.second)
+            }
+        }
+    }
+    /** Main：移除本 Renderer，不撤销宿主或其他 Renderer 的监听。 */
+    fun removeModuleListener(listener: WechatListener) { checkMain(); moduleListeners.remove(listener) }
+    /** Main：不同 Renderer 不能同时持有同一 ID。 */
+    fun hasModuleOwner(requestId: String): Boolean { checkMain(); return moduleListeners.values.any { requestId in it } }
+    /** Main：查询真实等待，receiver 遇到 SDK 异常时不能把仍在途的提交伪造成失败。 */
+    fun hasPendingRequest(requestId: String): Boolean { checkMain(); return session.isCurrent(requestId) }
+    /** Main：仅认领已由可信 store 恢复/缓冲且尚无 Renderer 持有的请求，不导入页面快照。 */
+    fun canResume(requestId: String): Boolean {
+        checkMain()
+        return !hasModuleOwner(requestId) &&
+            (hasPendingRequest(requestId) || receipts.any { it.second.requestId == requestId })
     }
     /** 同步兼容入口仅限 Main；沿用 false 表示未处理（含 SDK 异常）。精确异常用 Result 重载。 */
     fun handleIntent(intent: Intent): Boolean {
@@ -134,7 +159,9 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
             query = "mchId=${Uri.encode(merchantId)}&appId=${Uri.encode(appId)}&package=${Uri.encode(packageValue)}"
         })
     }
-    override fun cancel(requestId: String) = onMain {
+    override fun cancel(requestId: String) { cancel(requestId) {} }
+    /** Main callback 返回真实取消结果；存储失败保留 pending，不能伪造终态。 */
+    fun cancel(requestId: String, callback: (Result<Boolean>) -> Unit) = onMain {
         val waiting = synchronized(queued) { queued[requestId] }
         val request = currentRequest
         val cancelQueued = waiting != null && !waiting.cancelled
@@ -144,7 +171,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         }
         // 恢复后优先清除可信 pending，避免同 ID 的排队重复请求遮蔽冷启动记录。
         // 清除失败不是原提交终态；保留 pending/owner，让迟回执或取消重试继续匹配。
-        val cancelled = try { session.cancel(requestId) } catch (_: Exception) { return@onMain }
+        val cancelled = try { session.cancel(requestId) } catch (error: Exception) { callback(Result.failure(error)); return@onMain }
         if (cancelled) {
             receipts.removeAll { it.second.requestId == requestId }
             currentRequest = null
@@ -152,6 +179,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         } else if (waiting != null && cancelQueued) {
             submitted(waiting, WechatStatus.CANCELLED)
         } else receipts.removeAll { it.second.requestId == requestId }
+        callback(Result.success(cancelled || cancelQueued))
     }
     private fun submit(id: String, action: (Request) -> Unit) {
         val request = Request(id, desiredOwner)
@@ -170,6 +198,9 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         if (Looper.myLooper() == Looper.getMainLooper()) action() else main.post { action() }
     }
     private fun submitted(request: Request, status: WechatStatus) {
+        moduleListeners.toList().forEach { (listener, ids) ->
+            if (moduleListeners[listener] === ids && request.id in ids) listener.onSubmitted(request.id, status)
+        }
         val owner = activeOwner
         if (owner === desiredOwner && (request.owner == null || request.owner.listener === owner?.listener)) owner?.listener?.onSubmitted(request.id, status)
     }
@@ -189,9 +220,16 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         deliver(WechatReceipt(pending.requestId, kind, if (kind == WechatKind.AUTHORIZATION && resp.errCode == 0 && code == null) -1 else resp.errCode, code, page), owner)
     }
     private fun deliver(receipt: WechatReceipt, requestOwner: Owner?) {
+        var deliveredToModule = false
+        moduleListeners.toList().forEach { (listener, ids) ->
+            if (moduleListeners[listener] === ids && receipt.requestId in ids) {
+                deliveredToModule = true
+                listener.onReceipt(receipt)
+            }
+        }
         val owner = activeOwner
         if (owner != null && owner === desiredOwner && (requestOwner == null || owner.listener === requestOwner.listener)) owner.listener.onReceipt(receipt)
-        else {
+        else if (!deliveredToModule) {
             // ponytail: 最多缓存 64 笔归一回执；有原 owner 时仅允许同一 listener 重新 attach 回放。
             if (receipts.size == 64) receipts.removeAt(0)
             receipts.add(requestOwner?.listener to receipt)

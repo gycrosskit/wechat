@@ -33,6 +33,12 @@ public struct WechatReceipt {
 public final class WechatClient: NSObject, WXApiDelegate {
     private let session: WechatSession
     private let submitted: (String, String) -> Void
+    private struct ModuleListener {
+        let owns: (String) -> Bool
+        let submitted: (String, String) -> Void
+        let receipt: (WechatReceipt) -> Void
+    }
+    private var moduleListeners: [UUID: ModuleListener] = [:]
     private var receipt: ((WechatReceipt) -> Void)?
     private var receipts: [WechatReceipt] = []
     private var listenerGeneration: UInt64 = 0
@@ -65,11 +71,51 @@ public final class WechatClient: NSObject, WXApiDelegate {
     /// Main 撤销监听；在途等待保留，回执仍可暂存。
     public func detach() { precondition(Thread.isMainThread); listenerGeneration &+= 1; receipt = nil }
     private func deliver(_ result: WechatReceipt) {
-        if let receipt { receipt(result) } else {
+        var deliveredToModule = false
+        if let id = result.requestID ?? result.candidateRequestID {
+            for (key, listener) in moduleListeners where moduleListeners[key] != nil && listener.owns(id) {
+                deliveredToModule = true
+                listener.receipt(result)
+            }
+        }
+        if let receipt { receipt(result) } else if !deliveredToModule {
             // ponytail: 最多缓存 64 笔，跨进程结果交付由宿主保存。
             if receipts.count == 64 { receipts.removeFirst() }
             receipts.append(result)
         }
+    }
+    /// Main：按 Renderer 持有的 ID 过滤，不替换原宿主监听或重建 SDK client。
+    @discardableResult public func addModuleListener(owns: @escaping (String) -> Bool,
+        onSubmitted: @escaping (String, String) -> Void, onReceipt: @escaping (WechatReceipt) -> Void) -> UUID {
+        precondition(Thread.isMainThread)
+        let id = UUID()
+        moduleListeners[id] = ModuleListener(owns: owns, submitted: onSubmitted, receipt: onReceipt)
+        var index = 0
+        while moduleListeners[id] != nil && index < receipts.count {
+            let value = receipts[index]
+            if let requestID = value.requestID ?? value.candidateRequestID, owns(requestID) {
+                receipts.remove(at: index)
+                onReceipt(value)
+            } else { index += 1 }
+        }
+        return id
+    }
+    /// Main：只移除这个 Renderer 的监听。
+    public func removeModuleListener(_ id: UUID) { precondition(Thread.isMainThread); moduleListeners.removeValue(forKey: id) }
+    /// Main：已有 Renderer 持有的 ID 不可由新 Renderer 重复提交或认领。
+    public func hasModuleOwner(requestID: String) -> Bool {
+        precondition(Thread.isMainThread)
+        return moduleListeners.values.contains { $0.owns(requestID) }
+    }
+    /// Main：仅可信 OAuth pending/缓冲可恢复；已归属其他 Renderer 的请求不能再次认领。
+    public func canResume(requestID: String) -> Bool {
+        precondition(Thread.isMainThread)
+        return !hasModuleOwner(requestID: requestID) &&
+            (session.canResume(requestID) || receipts.contains { $0.requestID == requestID })
+    }
+    private func notifySubmitted(_ id: String, _ status: String) {
+        for (key, listener) in moduleListeners where moduleListeners[key] != nil && listener.owns(id) { listener.submitted(id, status) }
+        submitted(id, status)
     }
     /// Main 将 URL 交官方 SDK 验证；摘要去重但不保存包含 code 的原始 URL。
     public func handleOpenURL(_ url: URL) -> Bool {
@@ -87,7 +133,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
     public func authorize(requestID: String) {
         precondition(Thread.isMainThread)
         var random = [UInt8](repeating: 0, count: 32)
-        guard SecRandomCopyBytes(kSecRandomDefault, random.count, &random) == errSecSuccess else { submitted(requestID, "failed"); return }
+        guard SecRandomCopyBytes(kSecRandomDefault, random.count, &random) == errSecSuccess else { notifySubmitted(requestID, "failed"); return }
         let state = random.map { String(format: "%02x", $0) }.joined()
         guard begin(requestID, state: state) else { return }
         let request = SendAuthReq()
@@ -139,10 +185,14 @@ public final class WechatClient: NSObject, WXApiDelegate {
         send(request, id: requestID)
     }
     /// Main 清除本地等待，不能关闭微信；已发送分享取消后隔离本实例分享，避免错认迟回执。
-    public func cancel(requestID: String) {
+    public func cancel(requestID: String) { _ = cancelWithResult(requestID: requestID) }
+    /// Main：false 表示未知或可信 journal 清除失败，保留原等待，允许重试。
+    @discardableResult public func cancelWithResult(requestID: String) -> Bool {
         precondition(Thread.isMainThread)
         receipts.removeAll { $0.requestID == requestID || $0.candidateRequestID == requestID }
-        if session.cancel(requestID) { submitted(requestID, "cancelled") }
+        let cancelled = session.cancel(requestID)
+        if cancelled { notifySubmitted(requestID, "cancelled") }
+        return cancelled
     }
     public func onReq(_ req: BaseReq) {}
     public func onResp(_ resp: BaseResp) {
@@ -161,13 +211,13 @@ public final class WechatClient: NSObject, WXApiDelegate {
         }
     }
     private func begin(_ id: String, state: String? = nil, sharing: Bool = false) -> Bool {
-        if let status = session.begin(id, state: state, sharing: sharing) { submitted(id, status); return false }
+        if let status = session.begin(id, state: state, sharing: sharing) { notifySubmitted(id, status); return false }
         guard registered else { reject(id, "failed"); return false }
         guard WXApi.isWXAppInstalled() else { reject(id, "not_installed"); return false }
         guard WXApi.isWXAppSupport() else { reject(id, "unsupported"); return false }
         return true
     }
-    private func reject(_ id: String, _ status: String) { _ = session.cancel(id); submitted(id, status) }
+    private func reject(_ id: String, _ status: String) { _ = session.cancel(id); notifySubmitted(id, status) }
     private func share(_ message: WXMediaMessage, id: String, scene: WechatScene, recipientID: String? = nil, senderOpenID: String? = nil) {
         let request = SendMessageToWXReq()
         request.bText = false
@@ -185,7 +235,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
         WXApi.send(request) { [weak self] accepted in
             DispatchQueue.main.async {
                 guard let self, self.session.submitted(id, accepted: accepted) else { return }
-                self.submitted(id, accepted ? "requested" : "failed")
+                self.notifySubmitted(id, accepted ? "requested" : "failed")
             }
         }
     }
