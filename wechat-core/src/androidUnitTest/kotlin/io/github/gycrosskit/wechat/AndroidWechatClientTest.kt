@@ -15,6 +15,7 @@ import com.tencent.mm.opensdk.modelmsg.WXImageObject
 import com.tencent.mm.opensdk.openapi.IWXAPI
 import com.tencent.mm.opensdk.openapi.IWXAPIEventHandler
 import com.tencent.mm.opensdk.openapi.WXAPIFactory
+import com.tencent.mm.opensdk.constants.Build
 import java.io.ByteArrayOutputStream
 import java.lang.reflect.Proxy
 import java.util.concurrent.TimeUnit
@@ -277,6 +278,75 @@ class AndroidWechatClientTest {
         assertEquals(2, WechatFactoryShadow.sent.size)
     }
 
+    @Test fun specifiedContactAtMinimumVersionKeepsRecipientAndSenderSeparate() {
+        WechatFactoryShadow.supportApi = Build.SEND_TO_SPECIFIED_CONTACT_SDK_INT
+        client.shareImage("targeted", image(), WechatScene.SESSION, "recipient-id", "sender-id")
+        awaitSubmission()
+        val request = WechatFactoryShadow.sent.single() as SendMessageToWX.Req
+        assertEquals(SendMessageToWX.Req.WXSceneSpecifiedContact, request.scene)
+        assertEquals("recipient-id", request.userOpenId)
+        assertEquals("sender-id", request.openId)
+        assertTrue(request.checkArgs())
+        assertEquals(listOf("targeted" to WechatStatus.REQUESTED), listener.submitted)
+        assertTrue(listener.receipts.isEmpty())
+    }
+
+    @Test fun specifiedContactBelowMinimumVersionDoesNotSendOrFallBack() {
+        WechatFactoryShadow.supportApi = Build.SEND_TO_SPECIFIED_CONTACT_SDK_INT - 1
+        client.shareImage("old-client", image(), WechatScene.SESSION, "recipient-id", "sender-id")
+        awaitSubmission()
+        assertEquals(listOf("old-client" to WechatStatus.UNSUPPORTED), listener.submitted)
+        assertTrue(WechatFactoryShadow.sent.isEmpty())
+        assertNull(store.saved)
+        assertTrue(listener.receipts.isEmpty())
+    }
+
+    @Test fun specifiedContactWithoutSenderNeverUsesRecipientAsSender() {
+        for ((index, sender) in listOf(null, "", " ").withIndex()) {
+            client.shareImage("missing-sender-$index", image(), WechatScene.SESSION, "recipient-id", sender)
+            awaitSubmission(index + 1)
+            assertEquals("missing-sender-$index" to WechatStatus.UNSUPPORTED, listener.submitted.last())
+            assertNull(store.saved)
+        }
+        assertTrue(WechatFactoryShadow.sent.isEmpty())
+    }
+
+    @Test fun specifiedContactRejectsBlankRecipientAndTimeline() {
+        val inputs = listOf("" to WechatScene.SESSION, " " to WechatScene.SESSION, "recipient-id" to WechatScene.TIMELINE)
+        for ((index, input) in inputs.withIndex()) {
+            client.shareImage("invalid-target-$index", image(), input.second, input.first, "sender-id")
+            awaitSubmission(index + 1)
+            assertEquals("invalid-target-$index" to WechatStatus.INVALID_CONTENT, listener.submitted.last())
+            assertNull(store.saved)
+        }
+        assertTrue(WechatFactoryShadow.sent.isEmpty())
+    }
+
+    @Test fun ordinaryImageScenesDoNotCarrySenderOrRecipient() {
+        for ((index, scene) in listOf(WechatScene.SESSION, WechatScene.TIMELINE).withIndex()) {
+            val id = "ordinary-$index"
+            client.shareImage(id, image(), scene, senderOpenId = "sender-id")
+            awaitSubmission(index * 2 + 1)
+            val request = WechatFactoryShadow.sent.last() as SendMessageToWX.Req
+            assertEquals(if (scene == WechatScene.SESSION) SendMessageToWX.Req.WXSceneSession else SendMessageToWX.Req.WXSceneTimeline, request.scene)
+            assertNull(request.userOpenId)
+            assertNull(request.openId)
+            assertEquals(id to WechatStatus.REQUESTED, listener.submitted.last())
+            client.cancel(id)
+        }
+        assertEquals(2, WechatFactoryShadow.sent.size)
+    }
+
+    @Test fun specifiedContactSdkRejectionClearsPendingWithoutRequested() {
+        WechatFactoryShadow.accepted = false
+        client.shareImage("targeted-rejected", image(), WechatScene.SESSION, "recipient-id", "sender-id")
+        awaitSubmission()
+        assertEquals(1, WechatFactoryShadow.sent.size)
+        assertEquals(listOf("targeted-rejected" to WechatStatus.FAILED), listener.submitted)
+        assertNull(store.saved)
+        assertTrue(listener.receipts.isEmpty())
+    }
+
     @Test fun cancelImageWorkPreventsLateSdkSend() {
         background { client.shareImage("image", image(), WechatScene.SESSION) }
         // 只启动入队工作；图像结果即使已经排队，也不允许越过 Main cancel。
@@ -408,11 +478,12 @@ class WechatFactoryShadow {
         var registrationAccepted = true
         var handled = true
         var accepted = true
+        var supportApi = 0x28002d33
         var handleFailure = false
         var response: BaseResp? = null
         private var handler: IWXAPIEventHandler? = null
         val sent = mutableListOf<BaseReq>()
-        fun reset() { created = 0; registrations = 0; registrationAccepted = true; handled = true; accepted = true; handleFailure = false; response = null; handler = null; sent.clear() }
+        fun reset() { created = 0; registrations = 0; registrationAccepted = true; handled = true; accepted = true; supportApi = 0x28002d33; handleFailure = false; response = null; handler = null; sent.clear() }
         fun respond(resp: BaseResp) { requireNotNull(handler).onResp(resp) }
         @JvmStatic @Implementation
         fun createWXAPI(context: Context, appId: String, checkSignature: Boolean): IWXAPI {
@@ -422,7 +493,7 @@ class WechatFactoryShadow {
                 when (method.name) {
                     "registerApp" -> { registrations++; registrationAccepted }
                     "isWXAppInstalled" -> true
-                    "getWXAppSupportAPI" -> 0x28002d33
+                    "getWXAppSupportAPI" -> supportApi
                     "sendReq" -> { sent.add(args!![0] as BaseReq); accepted }
                     "handleIntent" -> { if (handleFailure) error("SDK handler failed"); handler = args!![1] as IWXAPIEventHandler; response?.let { handler!!.onResp(it) }; handled }
                     else -> error("Unexpected SDK call: ${method.name}")
