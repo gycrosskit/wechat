@@ -8,7 +8,7 @@ contracts = source[source.index("public enum WechatScene"):source.index("/// 宿
 callback = source[source.index("    public func onResp("):source.index("    private func begin(")]
 image_share = source[source.index("    public func shareImage("):source.index("    /// Main 分享无凭据")]
 share = source[source.index("    private func share("):source.index("    private func send(")]
-listener_fields = source[source.index("    private var receipt:"):source.index("    private let registered:")]
+listener_fields = source[source.index("    private struct ModuleListener"):source.index("    private let registered:")]
 listener_methods = source[source.index("    public func attach("):source.index("    /// Main 将 URL")]
 output = root / "build/swift-receipt"
 output.mkdir(parents=True, exist_ok=True)
@@ -111,7 +111,8 @@ print("Production Swift UTF-16 and UTF-8 text limits match Kotlin and OHOS")
 """)
 # 直接编译生产字段/方法，不重写回放算法；SDK只在既有分享探针中替身。
 with (output / "main.swift").open("a") as fixture:
-    fixture.write("class ListenerProbe {\n" + listener_fields + listener_methods + """
+    fixture.write("class ListenerProbe { let session = WechatSession(); let submitted: (String, String) -> Void = { _, _ in }\n" + listener_fields + listener_methods + """
+    func submit(_ id: String) { notifySubmitted(id, "requested") }
     func seed(_ id: String) { deliver(WechatReceipt(requestID: id, kind: .authorization, errorCode: 0, authorizationCode: nil, pageResult: nil)) }
 }
 for mode in ["detach", "replace"] {
@@ -128,6 +129,25 @@ for mode in ["detach", "replace"] {
     replay.detach(); replay.attach { _ in preconditionFailure("receipt replayed twice") }
 }
 print("Production Swift replay detachment/replacement preserves remaining receipts exactly once")
+let modules = ListenerProbe()
+modules.seed("buffered")
+var owned = Set(["buffered", "live"]), other = Set(["other"])
+var delivered = [String](), submittedIDs = [String](), otherDelivered = [String]()
+let registration = modules.addModuleListener(owns: { owned.contains($0) }, onSubmitted: { id, _ in submittedIDs.append(id) }, onReceipt: {
+    delivered.append($0.requestID!)
+    owned.remove($0.requestID!)
+})
+let next = modules.addModuleListener(owns: { other.contains($0) }, onSubmitted: { _, _ in }, onReceipt: { otherDelivered.append($0.requestID!) })
+precondition(delivered == ["buffered"] && otherDelivered.isEmpty)
+precondition(modules.hasModuleOwner(requestID: "live") && !modules.canResume(requestID: "live"))
+modules.submit("live"); modules.seed("live")
+precondition(submittedIDs == ["live"] && delivered == ["buffered", "live"] && otherDelivered.isEmpty)
+modules.removeModuleListener(registration)
+precondition(!modules.canResume(requestID: "live"))
+modules.seed("live")
+precondition(delivered.count == 2)
+modules.removeModuleListener(next)
+print("Production Swift filtered module observers: trusted buffer once, ownership, submit callback, removal and renderer isolation passed")
 """)
 subprocess.run(["swiftc", str(root / "iosApp/Sources/GycWechatNative/WechatSession.swift"),
                 str(output / "main.swift"), "-o", str(output / "check")], check=True)

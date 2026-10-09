@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Looper
+import org.json.JSONObject
+import io.github.gycrosskit.wechat.kuikly.AndroidWechatModule
 import com.tencent.mm.opensdk.modelbase.BaseReq
 import com.tencent.mm.opensdk.modelbase.BaseResp
 import com.tencent.mm.opensdk.modelbiz.WXOpenBusinessView
@@ -284,6 +286,77 @@ class AndroidWechatClientTest {
         finishImages()
         idle()
         assertTrue(WechatFactoryShadow.sent.isEmpty())
+    }
+
+    @Test fun rendererReceiverKeepsRealSubmissionAndSdkReceiptSeparate() {
+        val module = AndroidWechatModule(client)
+        val receipts = mutableListOf<JSONObject>(); val submitted = mutableListOf<String>()
+        module.call("listen", "{}") { receipts += JSONObject(it as String) }
+        background { module.call("authorize", "{\"requestId\":\"renderer\"}") { submitted += JSONObject(it as String).getString("status") } }
+        assertTrue(submitted.isEmpty()); idle()
+        assertEquals(listOf("requested"), submitted); assertTrue(receipts.isEmpty())
+        WechatFactoryShadow.respond(authResponse())
+        assertEquals("renderer", receipts.single().getString("requestId"))
+        assertEquals("VERIFIED", receipts.single().getString("attribution"))
+        assertEquals("renderer", listener.receipts.single().requestId)
+        module.onDestroy()
+    }
+    @Test fun anotherRendererCannotTakeOwnedIdOrReceiveOldCallback() {
+        val old = AndroidWechatModule(client); val next = AndroidWechatModule(client)
+        val oldReplies = mutableListOf<String>(); val nextReplies = mutableListOf<String>(); var nextReceipts = 0
+        old.call("listen", "{}", {})
+        old.call("authorize", "{\"requestId\":\"owned\"}") { oldReplies += JSONObject(it as String).getString("status") }
+        next.call("listen", "{\"restoredRequestId\":\"owned\"}") { nextReceipts++ }
+        next.call("authorize", "{\"requestId\":\"owned\"}") { nextReplies += JSONObject(it as String).getString("status") }
+        assertEquals(listOf("requested"), oldReplies); assertEquals(listOf("busy"), nextReplies)
+        store.failClear = true
+        val response = authResponse()
+        old.onDestroy()
+        store.failClear = false
+        WechatFactoryShadow.respond(response)
+        assertEquals(0, nextReceipts); assertEquals(listOf("requested"), oldReplies)
+        next.onDestroy()
+    }
+    @Test fun receiverCancelFailureRetainsOwnerAndAckDoesNotFakeOriginalFailure() {
+        val module = AndroidWechatModule(client); val receipts = mutableListOf<JSONObject>(); val ack = mutableListOf<String>(); val submitted = mutableListOf<String>()
+        module.call("listen", "{}") { receipts += JSONObject(it as String) }
+        module.call("authorize", "{\"requestId\":\"cancel-module\"}") { submitted += JSONObject(it as String).getString("status") }
+        store.failClear = true
+        module.call("cancel", "{\"requestId\":\"cancel-module\"}") { ack += JSONObject(it as String).getString("status") }
+        assertEquals(listOf("failed"), ack); assertEquals(listOf("requested"), submitted)
+        store.failClear = false
+        WechatFactoryShadow.respond(authResponse())
+        assertEquals("cancel-module", receipts.single().getString("requestId"))
+        module.call("cancel", "{\"requestId\":\"cancel-module\"}") { ack += JSONObject(it as String).getString("status") }
+        assertEquals(listOf("failed", "no_pending"), ack)
+        module.onDestroy()
+    }
+    @Test fun moduleReceiptWithoutHostListenerIsNotBufferedForAnotherRenderer() {
+        client = AndroidWechatClient(RuntimeEnvironment.getApplication(), "app-id", store = store)
+        val module = AndroidWechatModule(client); var receipts = 0
+        module.call("listen", "{}") { receipts++ }
+        module.call("authorize", "{\"requestId\":\"once-module\"}", {})
+        WechatFactoryShadow.respond(authResponse())
+        assertEquals(1, receipts)
+        assertFalse(client.canResume("once-module"))
+        val next = AndroidWechatModule(client)
+        next.call("listen", "{\"restoredRequestId\":\"once-module\"}") { receipts++ }
+        assertEquals(1, receipts)
+        module.onDestroy(); next.onDestroy()
+    }
+
+    @Test fun receiverRestoresOnlyTrustedPendingAndDestroySuppressesQueuedSend() {
+        store.saved = WechatPendingRequest("trusted-module", "token", WechatKind.AUTHORIZATION, "state")
+        client = AndroidWechatClient(RuntimeEnvironment.getApplication(), "app-id", listener, store)
+        val module = AndroidWechatModule(client); val receipts = mutableListOf<JSONObject>()
+        module.call("listen", "{\"restoredRequestId\":\"trusted-module\"}") { receipts += JSONObject(it as String) }
+        client.handleIntent(Intent())
+        WechatFactoryShadow.respond(SendAuth.Resp().apply { transaction = "token"; state = "state"; code = "code"; errCode = 0 })
+        assertEquals("trusted-module", receipts.single().getString("requestId"))
+        module.onDestroy()
+        val queued = AndroidWechatModule(client)
+        background { queued.call("listen", "{}", {}); queued.call("authorize", "{\"requestId\":\"queued-module\"}", {}); queued.onDestroy() }
+        idle(); assertTrue(WechatFactoryShadow.sent.isEmpty())
     }
 
     private fun authResponse(): SendAuth.Resp {
