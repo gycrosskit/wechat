@@ -44,6 +44,25 @@ public final class WechatClient: NSObject, WXApiDelegate {
     private var listenerGeneration: UInt64 = 0
     private let registered: Bool
     private var callbackDigests = Set<String>()
+    private var callbacks: [String: CallbackDelegate] = [:]
+    // SDK 回调可异步；每笔代理关联摘要，Client 保活，弱闭包避免环，旧代理仅处理一次。
+    private final class CallbackDelegate: NSObject, WXApiDelegate {
+        let request: (BaseReq) -> Void
+        var response: ((BaseResp) -> Void)?
+        init(request: @escaping (BaseReq) -> Void, response: @escaping (BaseResp) -> Void) {
+            self.request = request; self.response = response
+        }
+        func onReq(_ req: BaseReq) {
+            precondition(Thread.isMainThread)
+            guard response != nil else { return }
+            response = nil; request(req)
+        }
+        func onResp(_ resp: BaseResp) {
+            precondition(Thread.isMainThread)
+            let completion = response; response = nil
+            completion?(resp)
+        }
+    }
     /// Main 注册一次 SDK；宿主传入 appID、HTTPS universalLink 和可选可信 journal。
     public init(appID: String, universalLink: String,
                 onSubmitted: @escaping (String, String) -> Void,
@@ -120,14 +139,14 @@ public final class WechatClient: NSObject, WXApiDelegate {
     /// Main 将 URL 交官方 SDK 验证；摘要去重但不保存包含 code 的原始 URL。
     public func handleOpenURL(_ url: URL) -> Bool {
         precondition(Thread.isMainThread)
-        guard registered, !alreadyHandled(url.absoluteString) else { return false }
-        return WXApi.handleOpen(url, delegate: self)
+        guard registered else { return false }
+        return handleCallback(url) { WXApi.handleOpen(url, delegate: $0) }
     }
     /// Main 将 Universal Link 交官方 SDK 验证并摘要去重。
     public func handleUniversalLink(_ activity: NSUserActivity) -> Bool {
         precondition(Thread.isMainThread)
-        guard registered, let url = activity.webpageURL, !alreadyHandled(url.absoluteString) else { return false }
-        return WXApi.handleOpenUniversalLink(activity, delegate: self)
+        guard registered, let url = activity.webpageURL else { return false }
+        return handleCallback(url) { WXApi.handleOpenUniversalLink(activity, delegate: $0) }
     }
     /// Main 开始 OAuth；生成安全随机 state 并严格匹配最终回执。
     public func authorize(requestID: String) {
@@ -195,20 +214,29 @@ public final class WechatClient: NSObject, WXApiDelegate {
         return cancelled
     }
     public func onReq(_ req: BaseReq) {}
-    public func onResp(_ resp: BaseResp) {
+    public func onResp(_ resp: BaseResp) { onResp(resp, callbackDigest: nil) }
+    private func onResp(_ resp: BaseResp, callbackDigest: String?) {
         precondition(Thread.isMainThread)
         if let auth = resp as? SendAuthResp {
-            guard let id = session.consumeAuthorization(auth.state) else { return }
+            guard let id = session.consumeAuthorization(auth.state) else { finishCallback(callbackDigest, handled: false); return }
+            finishCallback(callbackDigest, handled: true)
             let code = auth.errCode == 0 ? auth.code.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } : nil
             deliver(WechatReceipt(requestID: id, kind: .authorization, errorCode: auth.errCode == 0 && code == nil ? -1 : auth.errCode, authorizationCode: code, pageResult: nil, attribution: .verified))
         } else if resp is SendMessageToWXResp {
+            finishCallback(callbackDigest, handled: true)
             guard let candidate = session.consumeShare() else { return }
             deliver(WechatReceipt(requestID: nil, kind: .share, errorCode: resp.errCode, authorizationCode: nil, pageResult: nil, candidateRequestID: candidate, attribution: .singlePending))
         } else if let transfer = resp as? WXOpenBusinessViewResp, transfer.businessType == "requestMerchantTransfer" {
+            finishCallback(callbackDigest, handled: true)
             let data = transfer.extMsg?.data(using: .utf8)
             let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
             deliver(WechatReceipt(requestID: nil, kind: .merchantTransfer, errorCode: resp.errCode, authorizationCode: nil, pageResult: json?["result"] as? String))
-        }
+        } else { finishCallback(callbackDigest, handled: true) }
+    }
+    private func finishCallback(_ digest: String?, handled: Bool) {
+        guard let digest else { return }
+        callbacks.removeValue(forKey: digest)
+        if handled { callbackDigests.insert(digest) }
     }
     private func begin(_ id: String, state: String? = nil, sharing: Bool = false) -> Bool {
         if let status = session.begin(id, state: state, sharing: sharing) { notifySubmitted(id, status); return false }
@@ -239,10 +267,22 @@ public final class WechatClient: NSObject, WXApiDelegate {
             }
         }
     }
-    private func alreadyHandled(_ url: String) -> Bool {
+    private func handleCallback(_ url: URL, handle: (WXApiDelegate) -> Bool) -> Bool {
         // 只存摘要，不保留包含 OAuth code 或支付参数的原始 URL。
-        let digest = SHA256.hash(data: Data(url.utf8)).map { String(format: "%02x", $0) }.joined()
-        return !callbackDigests.insert(digest).inserted
+        let digest = SHA256.hash(data: Data(url.absoluteString.utf8)).map { String(format: "%02x", $0) }.joined()
+        guard !callbackDigests.contains(digest), callbacks[digest] == nil else { return false }
+        let callback = CallbackDelegate(request: { [weak self] in
+            self?.finishCallback(digest, handled: true); self?.onReq($0)
+        },
+            response: { [weak self] in self?.onResp($0, callbackDigest: digest) })
+        callbacks[digest] = callback
+        let accepted = handle(callback)
+        if !accepted {
+            callback.response = nil
+            // 同步回调可在交付时重入；旧 SDK 返回值不能撤销新代理。
+            if callbacks[digest] === callback { callbacks.removeValue(forKey: digest) }
+        }
+        return accepted
     }
     private static func encode(_ value: String) -> String? {
         value.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"))

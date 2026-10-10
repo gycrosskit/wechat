@@ -10,9 +10,11 @@ image_share = source[source.index("    public func shareImage("):source.index(" 
 share = source[source.index("    private func share("):source.index("    private func send(")]
 listener_fields = source[source.index("    private struct ModuleListener"):source.index("    private let registered:")]
 listener_methods = source[source.index("    public func attach("):source.index("    /// Main 将 URL")]
+callback_fields = source[source.index("    private var callbackDigests"):source.index("    /// Main 注册一次 SDK")]
 output = root / "build/swift-receipt"
 output.mkdir(parents=True, exist_ok=True)
 (output / "main.swift").write_text("import Foundation\n" + contracts + """
+protocol WXApiDelegate { func onReq(_ req: BaseReq); func onResp(_ resp: BaseResp) }
 class BaseResp { var errCode: Int32 = 0 }
 class SendAuthResp: BaseResp { var state: String?; var code: String? }
 class SendMessageToWXResp: BaseResp {}
@@ -43,7 +45,7 @@ class ReceiptProbe {
         session.dispatchedShare(id)
         if session.submitted(id, accepted: accepted) { statuses.append(accepted ? "requested" : "failed") }
     }
-""" + callback + image_share + share + """
+""" + callback_fields + callback + image_share + share + """
 }
 for value in [nil, "", " \\t\\n", "\\u{00a0}\\u{2003}", " code "] as [String?] {
     let probe = ReceiptProbe()
