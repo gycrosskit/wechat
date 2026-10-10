@@ -14,3 +14,6 @@ verification/swift-build/
 verification/swift-check
 verification/ohos/*/src/main/resources/
 **/BuildProfile.ets
+/scripts/ci-changes.py
+/scripts/ci-run.py
+/scripts/ci-native-cache.py

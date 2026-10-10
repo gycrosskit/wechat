@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Immutable Maven release tag
+        description: Immutable Maven or Native release tag
         required: true
         type: string
 concurrency:
@@ -29,22 +29,16 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+      - name: Install shared CI tools
+        uses: gycrosskit/.github/actions/ci-tools@607ff44db144c68fc6523de38c04aac29e427b68
       - name: Verify immutable archive and public Maven inventory once
         timeout-minutes: 20
         run: python3 scripts/ci-run.py --log ci-diagnostics/verify-public.log -- bash scripts/verify-release.sh
       - name: Save public CI diagnostics
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: gycrosskit/.github/actions/ci-diagnostics@607ff44db144c68fc6523de38c04aac29e427b68
         with:
-          name: ci-${{ github.workflow }}-verify-public-${{ github.run_attempt }}
-          path: |
-            ci-diagnostics/**/*.log
-            ci-diagnostics/**/*.json
-            ci-diagnostics/**/*.jsonl
-            ci-diagnostics/**/*.txt
-            **/build/test-results/**/*.xml
-          if-no-files-found: ignore
-          retention-days: 7
+          status: ${{ job.status }}
   release-android:
     needs: verify-public
     if: always() && ((github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'native-')) || (github.event_name == 'workflow_dispatch' && inputs.version != '' && !startsWith(inputs.version, 'native-')))
@@ -62,6 +56,8 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+      - name: Install shared CI tools
+        uses: gycrosskit/.github/actions/ci-tools@607ff44db144c68fc6523de38c04aac29e427b68
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
@@ -75,17 +71,9 @@ jobs:
         timeout-minutes: 40
       - name: Save public CI diagnostics
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: gycrosskit/.github/actions/ci-diagnostics@607ff44db144c68fc6523de38c04aac29e427b68
         with:
-          name: ci-${{ github.workflow }}-release-android-${{ github.run_attempt }}
-          path: |
-            ci-diagnostics/**/*.log
-            ci-diagnostics/**/*.json
-            ci-diagnostics/**/*.jsonl
-            ci-diagnostics/**/*.txt
-            **/build/test-results/**/*.xml
-          if-no-files-found: ignore
-          retention-days: 7
+          status: ${{ job.status }}
   release-native:
     needs: verify-public
     if: always() && ((github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'native-')) || (github.event_name == 'workflow_dispatch' && inputs.version != '' && !startsWith(inputs.version, 'native-')))
@@ -103,6 +91,8 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+      - name: Install shared CI tools
+        uses: gycrosskit/.github/actions/ci-tools@607ff44db144c68fc6523de38c04aac29e427b68
       - name: Identify Native toolchain and Xcode
         id: native-key
         run: python3 scripts/ci-native-cache.py --key >> "$GITHUB_OUTPUT"
@@ -133,7 +123,7 @@ jobs:
           verify_native=$(python3 -c 'import os; v=os.environ["VERSION"].split("-",1)[0]; print(str(tuple(map(int,v.split("."))) >= (0, 1, 8)).lower())')
           if [[ "$verify_native" == true ]]; then
             mkdir -p ci-diagnostics
-            render_dir=$(bash scripts/ci-build-kuikly-render.sh "$RUNNER_TEMP/kuikly-native" GycWechatNative/Kuikly wechat native-0.1.7 2> >(tee ci-diagnostics/release-native-kuikly-sdk.log >&2))
+            render_dir=$(bash scripts/ci-build-kuikly-render.sh "$RUNNER_TEMP/kuikly-native" GycWechatNative/Kuikly wechat native-0.1.8 2> >(tee ci-diagnostics/release-native-kuikly-sdk.log >&2))
             python3 verification/swift-kuikly/verify-public-api.py "$render_dir"
             echo "framework_dir=$render_dir" >> "$GITHUB_OUTPUT"
           fi
@@ -157,14 +147,53 @@ jobs:
           key: ${{ steps.konan-cache.outputs.cache-primary-key }}
       - name: Save public CI diagnostics
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: gycrosskit/.github/actions/ci-diagnostics@607ff44db144c68fc6523de38c04aac29e427b68
         with:
-          name: ci-${{ github.workflow }}-release-native-${{ github.run_attempt }}
-          path: |
-            ci-diagnostics/**/*.log
-            ci-diagnostics/**/*.json
-            ci-diagnostics/**/*.jsonl
-            ci-diagnostics/**/*.txt
-            **/build/test-results/**/*.xml
-          if-no-files-found: ignore
-          retention-days: 7
+          status: ${{ job.status }}
+  native-git-pod:
+    if: startsWith(github.event.release.tag_name || inputs.version, 'native-')
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.release.tag_name || inputs.version }}
+      - name: Install shared CI tools
+        uses: gycrosskit/.github/actions/ci-tools@607ff44db144c68fc6523de38c04aac29e427b68
+      - name: Consume exact Native Git Pod and Swift Package
+        timeout-minutes: 40
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^native-[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected an immutable native tag' >&2; exit 1; }
+          build_dir="$RUNNER_TEMP/native-consumer"
+          products=$(python3 scripts/ci-run.py --log ci-diagnostics/native-pod.log -- bash scripts/ci-build-kuikly-render.sh "$build_dir" GycWechatNative/Kuikly wechat "$VERSION" | tail -n 1)
+          python3 verification/swift-kuikly/verify-public-api.py "$products"
+          ruby -r yaml -e 'lock=YAML.load_file(ARGV[0]); abort "Native Pod tag differs" unless lock.fetch("CHECKOUT OPTIONS").fetch("GycWechatNative").fetch(:tag) == ARGV[1]' "$build_dir/Podfile.lock" "$VERSION"
+          python3 - "$build_dir/Pods/GycWechatNative" <<'POD_SOURCE'
+          from pathlib import Path
+          import sys
+          remote = Path(sys.argv[1])
+          for directory in ('GycWechatNative', 'GycWechatKuikly'):
+              for source in (Path('iosApp/Sources') / directory).glob('*.swift'):
+                  assert source.read_bytes() == (remote / source).read_bytes(), f'Git Pod source differs: {source}'
+          print('Git Pod compiled Native and Kuikly sources match the released checkout')
+          POD_SOURCE
+          python3 scripts/ci-run.py --log ci-diagnostics/native-spm-resolve.log -- swift package --package-path verification/swift-consumer resolve
+          python3 - "$(git rev-parse HEAD)" <<'SPM_IDENTITY'
+          import json, sys
+          from pathlib import Path
+          lock = json.loads(Path('verification/swift-consumer/Package.resolved').read_text())
+          pins = [pin for pin in lock['pins'] if pin['identity'] == 'wechat']
+          assert len(pins) == 1 and pins[0]['state']['revision'] == sys.argv[1], 'Swift Package resolved a different commit'
+          print('Git Pod and Swift Package use the exact released commit')
+          SPM_IDENTITY
+          sdk=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          vendor_dir="$build_dir/Pods/WechatOpenSDK-XCFramework/WechatOpenSDK.xcframework/ios-arm64_x86_64-simulator"
+          test -d "$vendor_dir/WechatOpenSDK.framework"
+          python3 scripts/ci-run.py --log ci-diagnostics/native-spm-build.log -- swift build --package-path verification/swift-consumer --sdk "$sdk" --triple "$(uname -m)-apple-ios15.0-simulator" -Xswiftc -F -Xswiftc "$vendor_dir" -Xcc "-F$vendor_dir"
+      - name: Save public CI diagnostics
+        if: always()
+        uses: gycrosskit/.github/actions/ci-diagnostics@607ff44db144c68fc6523de38c04aac29e427b68
+        with:
+          status: ${{ job.status }}
