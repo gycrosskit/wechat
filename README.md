@@ -2,7 +2,7 @@
 
 2026-10-09 已发布：Maven `0.1.8`、Git Pod `native-0.1.7`（内部 `0.1.7`），HAR 不变。新增 Android/iOS Kuikly Native Module receiver 与平台变体；已发布 Maven `0.1.7` 不包含此能力。iOS receiver 从可选 `GycWechatNative/Kuikly` Git Pod subspec 导出，默认 Native Pod / Wechat SPM 不自动依赖 Kuikly。具体发布与远程验收结果见[对应 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.8)。接线见[接入指南的 Native receiver](docs/接入指南.md#androidios-kuikly-native-receiver)。
 
-2026-10-10 原生修复候选：Swift Package / Git Pod `native-0.1.8`（Pod内部 `0.1.8`），修复 journal 清除失败后同一 OAuth URL 无法重试。仅原生源码改变，继续搭配 Maven `0.1.8` 与 HAR `0.1.6`；本轮入口回归和官方 SDK 编译 已通过，远程消费及设备业务待验证。
+2026-10-10 已发布原生修复：[Swift Package / Git Pod `native-0.1.8`](https://github.com/gycrosskit/wechat/releases/tag/native-0.1.8)（Pod内部 `0.1.8`），修复 journal 清除失败后同一 OAuth URL 无法重试。仅原生源码改变，继续搭配 Maven `0.1.8` 与 HAR `0.1.6`；入口回归、官方 SDK 编译和独立远程 Git Pod / SPM 消费均通过，[Release 消费门禁](https://github.com/gycrosskit/wechat/actions/runs/38015413617)已成功，设备业务待验收。
 
 ## 当前功能与平台边界
 
