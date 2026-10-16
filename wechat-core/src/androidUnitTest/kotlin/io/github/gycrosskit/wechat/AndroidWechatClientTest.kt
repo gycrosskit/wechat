@@ -269,13 +269,54 @@ class AndroidWechatClientTest {
         val request = WechatFactoryShadow.sent.single() as SendMessageToWX.Req
         assertTrue((request.message.mediaObject as WXImageObject).imageData.any { it != 0.toByte() })
         assertEquals("image" to WechatStatus.REQUESTED, listener.submitted.last())
-        client.cancel("image")
         val thumb = image()
         background { client.shareWebPage("web", "https://example.com", "title", "description", thumb, WechatScene.SESSION) }
         thumb.fill(0)
-        awaitSubmission(3)
+        awaitSubmission(2)
         assertEquals("web" to WechatStatus.REQUESTED, listener.submitted.last())
         assertEquals(2, WechatFactoryShadow.sent.size)
+    }
+
+    @Test fun acceptedImagesAllowRepeatsAndLateImageReceiptCannotConsumeNextOperation() {
+        repeat(3) { index ->
+            client.shareImage("repeat-$index", image(), WechatScene.SESSION)
+            awaitSubmission(index + 1)
+            assertEquals("repeat-$index" to WechatStatus.REQUESTED, listener.submitted.last())
+            assertNull(store.saved)
+            assertFalse(client.hasPendingRequest("repeat-$index"))
+        }
+        val imageTransaction = WechatFactoryShadow.sent.first().transaction
+        client.handleIntent(Intent())
+        val oldReceipt = SendMessageToWX.Resp().apply { transaction = imageTransaction; errCode = 0 }
+        client.shareWebPage("web-next", "https://example.com", "title", "description", image(), WechatScene.SESSION)
+        awaitSubmission(4)
+        val webTransaction = WechatFactoryShadow.sent.last().transaction
+        WechatFactoryShadow.respond(oldReceipt)
+        assertTrue(listener.receipts.isEmpty())
+        assertTrue(client.hasPendingRequest("web-next"))
+        WechatFactoryShadow.respond(SendMessageToWX.Resp().apply { transaction = webTransaction; errCode = 0 })
+        assertEquals("web-next", listener.receipts.single().requestId)
+        client.authorize("auth-next")
+        WechatFactoryShadow.respond(oldReceipt)
+        assertTrue(client.hasPendingRequest("auth-next"))
+        client.cancel("auth-next")
+        client.openMerchantTransfer("transfer-next", "merchant", "app-id", "package")
+        WechatFactoryShadow.respond(oldReceipt)
+        assertTrue(client.hasPendingRequest("transfer-next"))
+    }
+
+    @Test fun imageModuleReleasesRendererOwnerOnAcceptance() {
+        val module = AndroidWechatModule(client)
+        val submissions = mutableListOf<String>()
+        module.call("listen", "{}", {})
+        val encoded = android.util.Base64.encodeToString(image(), android.util.Base64.NO_WRAP)
+        module.call("image", JSONObject().put("requestId", "module-image").put("data", encoded).put("scene", "session").toString()) {
+            submissions.add(JSONObject(it as String).getString("status"))
+        }
+        finishImages(); idle()
+        assertEquals(listOf("requested"), submissions)
+        assertFalse(client.hasModuleOwner("module-image"))
+        module.onDestroy()
     }
 
     @Test fun specifiedContactAtMinimumVersionKeepsRecipientAndSenderSeparate() {
@@ -326,13 +367,12 @@ class AndroidWechatClientTest {
         for ((index, scene) in listOf(WechatScene.SESSION, WechatScene.TIMELINE).withIndex()) {
             val id = "ordinary-$index"
             client.shareImage(id, image(), scene, senderOpenId = "sender-id")
-            awaitSubmission(index * 2 + 1)
+            awaitSubmission(index + 1)
             val request = WechatFactoryShadow.sent.last() as SendMessageToWX.Req
             assertEquals(if (scene == WechatScene.SESSION) SendMessageToWX.Req.WXSceneSession else SendMessageToWX.Req.WXSceneTimeline, request.scene)
             assertNull(request.userOpenId)
             assertNull(request.openId)
             assertEquals(id to WechatStatus.REQUESTED, listener.submitted.last())
-            client.cancel(id)
         }
         assertEquals(2, WechatFactoryShadow.sent.size)
     }

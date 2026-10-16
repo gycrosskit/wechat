@@ -149,7 +149,7 @@ jobs:
       - run: bash scripts/ci-pin-fork-host.sh
         if: (needs.changes.outputs.source == 'true') || (github.event_name == 'workflow_dispatch' && inputs.warm_native_cache && github.ref == 'refs/heads/main')
         timeout-minutes: 5
-      - run: python3 scripts/ci-run.py --log ci-diagnostics/native-1.log -- bash -ec 'python3 tests/swift-callback.py; python3 tests/swift-receipt.py; python3 verification/swift-kuikly/verify.py'
+      - run: python3 scripts/ci-run.py --log ci-diagnostics/native-1.log -- bash -ec 'python3 tests/swift-callback.py; python3 tests/swift-receipt.py; python3 verification/swift-kuikly/verify.py; python3 verification/ci/test_release_native_version.py'
         if: needs.changes.outputs.source == 'true'
         timeout-minutes: 15
       - timeout-minutes: 40

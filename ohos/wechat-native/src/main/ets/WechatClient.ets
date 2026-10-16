@@ -33,6 +33,7 @@ export class WechatClient implements wx.WXApiEventHandler {
   private receipts: WechatReceipt[] = [];
   private usedTransactions: Set<string> = new Set();
   private pending: Pending | null = null;
+  private imageFiles: Map<string, string> = new Map();
   private usedIds: Set<string> = new Set();
   private listeners: Map<Listener, ListenerRegistration> = new Map();
   private appId: string;
@@ -88,6 +89,13 @@ export class WechatClient implements wx.WXApiEventHandler {
   handleWant(want: Want): boolean { try { return this.api.handleWant(want, this); } catch (_) { return false; } }
   onReq(_req: wx.BaseReq): void {}
   onResp(resp: wx.BaseResp): void {
+    if (resp instanceof wx.SendMessageToWXResp) {
+      const path = this.imageFiles.get(resp.transaction);
+      if (path) {
+        this.imageFiles.delete(resp.transaction); this.removeFile(path);
+        return;
+      }
+    }
     const current = this.pending;
     if (!current || current.cancelled || resp.transaction !== current.transaction) { return; }
     let result: WechatReceipt;
@@ -130,9 +138,9 @@ export class WechatClient implements wx.WXApiEventHandler {
       return await this.send(req, pending);
     } catch (_) { return this.fail(pending, 'failed'); }
   }
-  /** Base64 编码 PNG/JPEG 最大 25 MiB；目标联系人不支持时拒绝，临时文件消费/取消后删除。 */
+  /** Base64 编码 PNG/JPEG 最大 25 MiB；仅返回 SDK 受理，文件保留到匹配回执后删除。 */
   async shareImage(id: string, base64: string, scene: string, recipientId?: string, _senderOpenId?: string): Promise<WechatStatus> {
-    const rejected = this.begin(id, 'share'); if (rejected) { return rejected; }
+    const rejected = this.begin(id, 'image'); if (rejected) { return rejected; }
     const pending = this.pending!;
     if (recipientId !== undefined) { return this.fail(pending, typeof recipientId !== 'string' || !recipientId.trim() || scene !== 'session' ? 'invalid_content' : 'unsupported'); }
     if (!this.validScene(scene) || typeof base64 !== 'string' || !base64 || base64.length > Math.ceil(25 * 1024 * 1024 / 3) * 4) { return this.fail(pending, 'invalid_content'); }
@@ -158,9 +166,12 @@ export class WechatClient implements wx.WXApiEventHandler {
       } finally { await fs.close(file); }
       const object = new wx.WXImageObject(); object.uri = fileUri.getUriFromPath(pending.path);
       const message = new wx.WXMediaMessage(); message.mediaObject = object; message.thumbData = thumb;
-      return this.sendShare(message, scene, pending);
+      return await this.sendShare(message, scene, pending);
     } catch (_) { return this.fail(pending, pending.cancelled ? 'cancelled' : 'invalid_content'); }
-    finally { if (source) { await source.release(); } if (pending.cancelled) { await this.removeFile(pending.path); } }
+    finally {
+      // 已受理不能因本地资源释放失败变为失败，避免宿主重复发送。
+      if (source) { try { await source.release(); } catch (_) {} }
+    }
   }
   /** 分享无凭据 HTTP(S) 页面；缩略图是 Base64 图片，标题/描述同时受字符与字节限制。 */
   async shareWebPage(id: string, address: string, title: string, description: string, thumbBase64: string, scene: string): Promise<WechatStatus> {
@@ -189,13 +200,14 @@ export class WechatClient implements wx.WXApiEventHandler {
     req.query = `mchId=${this.encode(merchantId)}&appId=${this.encode(appId)}&package=${this.encode(packageValue)}`;
     return this.send(req, pending);
   }
-  /** 清除可信本地等待并删除临时文件；清除失败抛错保留 pending，不能关闭外部微信页面。 */
+  /** 清除业务等待；未发送图片可删除，SDK 已持有的 URI 等匹配回执，不能关闭外部微信页面。 */
   cancel(id: string): boolean {
     this.receipts = this.receipts.filter((receipt: WechatReceipt) => receipt.requestId !== id);
     const pending = this.pending;
     if (!pending || pending.id !== id) { return false; }
-    this.store?.save(null);
-    pending.cancelled = true; this.pending = null; this.removeFile(pending.path);
+    if (pending.kind !== 'image') { this.store?.save(null); }
+    pending.cancelled = true; this.pending = null;
+    if (!this.imageFiles.has(pending.transaction)) { this.removeFile(pending.path); }
     return true;
   }
   private begin(id: string, kind: string): WechatStatus | null {
@@ -218,16 +230,24 @@ export class WechatClient implements wx.WXApiEventHandler {
     req.transaction = pending.transaction;
     try {
       if (!req.checkArgs()) { return this.fail(pending, 'invalid_content'); }
-      // 在 SDK 发送前写入；SDK 回执可能早于 send Promise 完成。
-      this.store?.save({ requestId: pending.id, transaction: pending.transaction, kind: pending.kind, state: pending.state });
+      // 图片仅跟踪文件；其余请求在发送前保存，回执可能早于 send Promise 完成。
+      if (pending.kind === 'image') { this.imageFiles.set(pending.transaction, pending.path); }
+      else { this.store?.save({ requestId: pending.id, transaction: pending.transaction, kind: pending.kind, state: pending.state }); }
       const accepted = await this.api.sendReq(this.context, req);
-      if (pending.cancelled) { await this.removeFile(pending.path); return 'cancelled'; }
-      if (accepted) { return 'requested'; }
+      if (accepted) {
+        // shortcut: SDK 1.0.23 仅授予 Want URI 读取权，缺回执时由系统回收 cache，确认消费合同后再缩短保留期。
+        if (pending.kind === 'image' && this.pending === pending) { this.pending = null; }
+        return pending.cancelled ? 'cancelled' : 'requested';
+      }
     } catch (_) {}
-    return this.fail(pending, 'failed');
+    return this.fail(pending, pending.cancelled ? 'cancelled' : 'failed');
   }
   private fail(pending: Pending, status: WechatStatus): WechatStatus {
-    if (this.pending === pending) { this.store?.save(null); this.pending = null; }
+    if (this.pending === pending) {
+      if (pending.kind !== 'image') { this.store?.save(null); }
+      this.pending = null;
+    }
+    this.imageFiles.delete(pending.transaction);
     this.removeFile(pending.path); return status;
   }
   private async thumbnail(source: image.ImageSource): Promise<Uint8Array | null> {

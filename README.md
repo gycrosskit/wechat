@@ -1,5 +1,7 @@
 # GY CrossKit Wechat
 
+本次发布候选：Maven `0.1.9`、Git Pod / SPM `native-0.1.9`（Pod `0.1.9`）、HAR `0.1.7`。修复普通图片重复分享；iOS 无法证明分享回执归属时保持 `UNATTRIBUTED`，不完成网页任务。发布和远程消费状态见[本版 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.9)，真机业务待验收。
+
 2026-10-09 已发布：Maven `0.1.8`、Git Pod `native-0.1.7`（内部 `0.1.7`），HAR 不变。新增 Android/iOS Kuikly Native Module receiver 与平台变体；已发布 Maven `0.1.7` 不包含此能力。iOS receiver 从可选 `GycWechatNative/Kuikly` Git Pod subspec 导出，默认 Native Pod / Wechat SPM 不自动依赖 Kuikly。具体发布与远程验收结果见[对应 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.8)。接线见[接入指南的 Native receiver](docs/接入指南.md#androidios-kuikly-native-receiver)。
 
 2026-10-10 已发布原生修复：[Swift Package / Git Pod `native-0.1.8`](https://github.com/gycrosskit/wechat/releases/tag/native-0.1.8)（Pod内部 `0.1.8`），修复 journal 清除失败后同一 OAuth URL 无法重试。仅原生源码改变，继续搭配 Maven `0.1.8` 与 HAR `0.1.6`；入口回归、官方 SDK 编译和独立远程 Git Pod / SPM 消费均通过，[Release 消费门禁](https://github.com/gycrosskit/wechat/actions/runs/38015413617)已成功，设备业务待验收。
@@ -69,7 +71,7 @@ sequenceDiagram
     end
 ```
 
-类型图聚焦 Kotlin Android 链路，`WechatSession` 是内部单笔 pending 状态；监听器分别接收受理与回执。iOS 已发送分享后取消会隔离该实例后续分享。Kuikly `dispose()` 移除页面监听和 callback，原生 client 仍为进程级实例；取消是否成功必须等待同版原生确认。
+类型图聚焦 Kotlin Android 链路，`WechatSession` 是内部单笔 pending 状态；监听器分别接收受理与回执。图片仅等待 SDK 受理；iOS 图片已发送或网页取消后不再提供分享候选，后续分享仍可提交。Kuikly `dispose()` 移除页面监听和 callback，原生 client 仍为进程级实例；取消是否成功必须等待同版原生确认。
 
 ```mermaid
 classDiagram
@@ -143,26 +145,26 @@ dependencyResolutionManagement {
     }
 }
 // commonMain.dependencies
-implementation("com.github.gycrosskit.wechat:wechat-core:0.1.8")
+implementation("com.github.gycrosskit.wechat:wechat-core:0.1.9")
 // Android/iOS/OHOS Kuikly 宿主额外添加：
-implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.8")
+implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.9")
 ```
 
 iOS 选择 Git Pod，或 Xcode 的 Swift Package：
 
 ```ruby
-pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-0.1.8'
+pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-0.1.9'
 ```
 
-Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-0.1.8`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，Git Pod 不通过 CocoaPods Specs 分发。Native SPM 与 Pod 二选一；使用 `/Kuikly` subspec 时由其包含 Native，不再额外打包同名 SPM 产品。
+Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-0.1.9`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，Git Pod 不通过 CocoaPods Specs 分发。Native SPM 与 Pod 二选一；使用 `/Kuikly` subspec 时由其包含 Native，不再额外打包同名 SPM 产品。
 
-HarmonyOS 此版使用 HAR `0.1.6`，精确 Registry 可安装性见顶部发布记录。Registry 审核通过前按 Release SHA 固定下载独立原生包，审核受理不等于已上架：
+HarmonyOS 此版使用 HAR `0.1.7`，精确 Registry 可安装性见顶部发布记录。Registry 审核通过前按 Release SHA 固定下载独立原生包，审核受理不等于已上架：
 
 ```sh
-ohpm install @gycrosskit/wechat-native@0.1.6
+ohpm install @gycrosskit/wechat-native@0.1.7
 ```
 
-[此版 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.7) 提供 HAR `0.1.6` 的 `WechatNative.har` 和 SHA-256，供校验及文件依赖使用；不要以旧 0.1.0 替代新增 API。
+[此版 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.9) 提供 HAR `0.1.7` 的 `WechatNative.har` 和 SHA-256，供校验及文件依赖使用；不要以旧 0.1.0 替代新增 API。
 
 ## 最小接入
 
@@ -189,7 +191,7 @@ OHOS 在 EntryAbility 配置 `WechatClient.configure(appId, context, trustedStor
 - Android 构造、授权、分享、转账、取消与 attach/detach 允许任意线程；主线程即时执行，后台排队，图片计算仍在专用 imageExecutor。Unit 返回不代表 SDK 受理；同步 Boolean `handleIntent` 仍限定 Main，兼容旧 false 表示未处理（含 SDK 异常），后台必须使用 callback 重载，不阻塞等待。
 - Android Main 取消尚未执行的入队请求后，该请求不会打开微信。`cancel` 返回不保证清除；存储清除失败保留 pending/owner，不伪造 CANCELLED 或 FAILED 终态，未知 ID 不通知终态。无 owner 的回执支持晚监听；有 owner 的迟回执只交给同一 listener（detach 后重新 attach 也可回放），新 listener 不接旧 owner 结果。
 - `REQUESTED` 只表示 SDK 受理。Android/OHOS 按 transaction、类型和 OAuth state 验证回执；iOS 分享没有 transaction，`requestId == nil`，`SINGLE_PENDING` 只是当前单笔任务的本地候选，不能当成 SDK 准确关联或资金凭据。
-- iOS 分享在回执前保持 `BUSY`；SDK 已发送后取消，会隔离本实例后续分享并返回 `UNSUPPORTED`，防止迟回执误认。不得在同进程重建客户端绕过；OAuth 与转账仍可使用。
+- 图片只报告 SDK 提交结果，受理后释放占用，不持久恢复或交付业务回执。网页保留任务回执关联；iOS 图片交 SDK 或已发送网页取消后，`canCorrelateShareReceipt` 永久为 false，分享回执为 `UNATTRIBUTED`，后续网页也只等受理。宿主此时清理任务关联，不能把旧回执用于新任务，也不能重建 client 绕过归属边界。
 - 冷启动恢复需要宿主提供同步原子可信 store，发送前保存、消费/取消前清除。不能从 Intent/Want/URL 生成恢复记录；iOS 只恢复 OAuth。归一回执的迟监听缓存仅限当前进程，业务服务端仍需兜底。
 - 图片最大 25 MiB，缩略图最大 32 KiB；Android 大于 10 MiB 需满足专用客户端版本门槛。指定联系人由 Android 和当前 iOS 源码支持，需同 App 可信接收者和发送者 openId；Android 保留 SDK 客户端版本门槛，iOS 使用官方场景及收件人字段并等待真实 SDK 受理/回执。OHOS 仍不支持，不降级普通好友；iOS 最低客户端条件及真实发送待设备验收。
 - 凭据、state、Code、原始回跳与商户参数不得写入日志。`cancel` 只能结束本地等待；库不实现普通 `PayReq` APP 支付。

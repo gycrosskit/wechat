@@ -40,7 +40,7 @@ export class WechatModule extends KuiklyRenderBaseModule {
     this.ids.add(args.requestId);
     this.perform(client, method, args).then((status: WechatStatus) => {
       if (!this.ids.has(args.requestId)) { return; }
-      if (status !== 'requested') { this.ids.delete(args.requestId); }
+      if (status !== 'requested' || method === 'image') { this.ids.delete(args.requestId); }
       if (!this.destroyed) { callback?.({ status }); }
     }).catch(() => {
       if (!this.ids.has(args.requestId)) { return; }
