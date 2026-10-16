@@ -25,7 +25,9 @@ final class WechatSession {
     enum ShareMode { case submissionOnly, tracked }
     private var share: (id: String, mode: ShareMode, dispatched: Bool)?
     private var shareAttributionUncertain = false
-    var canCorrelateShareReceipt: Bool { !shareAttributionUncertain }
+    var canCorrelateShareReceipt: Bool {
+        !shareAttributionUncertain && !(share?.mode == .submissionOnly && share?.dispatched == true)
+    }
     private var authorization: WechatPendingAuthorization?
     private let store: WechatAuthorizationStore?
     private var restorationFailed = false
@@ -59,6 +61,7 @@ final class WechatSession {
     func submitted(_ id: String, accepted: Bool) -> Bool {
         guard submitting == id else { return false }
         submitting = nil
+        if accepted, share?.id == id, share?.mode == .submissionOnly { shareAttributionUncertain = true }
         if share?.id == id, !accepted || share?.mode == .submissionOnly || shareAttributionUncertain { share = nil }
         if !accepted, authorization?.requestID == id {
             do { try store?.save(nil) } catch { return false }
@@ -69,11 +72,11 @@ final class WechatSession {
     @discardableResult func dispatchedShare(_ id: String) -> Bool {
         guard submitting == id, share?.id == id else { return false }
         share?.dispatched = true
-        // shortcut: SDK 无 transaction，图片交 SDK 后迟回执无法与后续网页区分，SDK 提供标识后再解除。
-        if share?.mode == .submissionOnly { shareAttributionUncertain = true }
         return true
     }
     func consumeShare() -> String? {
+        // 早于提交结果的图片回执已经证明交付；后续拒绝结果不能恢复关联能力。
+        if share?.mode == .submissionOnly, share?.dispatched == true { shareAttributionUncertain = true }
         guard !shareAttributionUncertain, let pending = share, pending.mode == .tracked, pending.dispatched else { return nil }
         share = nil
         return pending.id

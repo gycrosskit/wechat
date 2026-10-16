@@ -121,7 +121,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
     }
     /// Main：只移除这个 Renderer 的监听。
     public func removeModuleListener(_ id: UUID) { precondition(Thread.isMainThread); moduleListeners.removeValue(forKey: id) }
-    /// Main：true 仅表示可提供单笔分享候选，不是 SDK 归属证明；图片发送或已发送分享取消后恒为 false。
+    /// Main：true 仅表示可提供单笔分享候选；图片受理、已收到图片回执或已发送分享取消后恒为 false。
     public var canCorrelateShareReceipt: Bool {
         precondition(Thread.isMainThread)
         return session.canCorrelateShareReceipt

@@ -166,7 +166,7 @@ check(imageClient.canCorrelateShareReceipt, "fresh client can provide a singlePe
 for index in 1...3 {
     let id = "image-\(index)"
     imageClient.shareImage(requestID: id, data: Data([1]), scene: .session)
-    check(!imageClient.canCorrelateShareReceipt && WXApi.sent.count == index, "image dispatch marks all future share receipts uncertain")
+    check(!imageClient.canCorrelateShareReceipt && WXApi.sent.count == index, "in-flight or previously accepted image cannot provide a share candidate")
     imageClient.shareImage(requestID: "overlap-\(index)", data: Data([1]), scene: .session)
     check(imageStatuses.last?.1 == "busy" && WXApi.sent.count == index, "image holds sending exclusion until actual SDK ack")
     WXApi.sendCompletions[index - 1](true); drainSendAck()
@@ -224,6 +224,27 @@ check(cancellationReceipts.last?.attribution == .unattributed && !cancellationCl
 cancellationClient.shareImage(requestID: "again-after-cancel", data: Data([1]), scene: .session)
 check(WXApi.sent.count == 4, "uncertain webpage does not retain global share occupancy")
 print("PASS: cancelled dispatched webpage allows images while late callbacks stay unattributed")
+
+WXApi.reset(); WXApi.autoAck = false
+var refusedStatuses = [(String, String)](), refusedReceipts = [WechatReceipt]()
+let refusedClient = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx",
+    onSubmitted: { refusedStatuses.append(($0, $1)) }, onReceipt: { refusedReceipts.append($0) })
+refusedClient.shareImage(requestID: "refused-image", data: Data([1]), scene: .session)
+check(!refusedClient.canCorrelateShareReceipt, "in-flight image cannot provide a share candidate")
+WXApi.sendCompletions[0](false); drainSendAck()
+check(refusedStatuses.last?.1 == "failed" && refusedClient.canCorrelateShareReceipt, "SDK refusal without receipt preserves webpage candidate capability")
+refusedClient.shareWebPage(requestID: "web-after-refusal", url: "https://example.com", title: "title", description: "", thumbnail: Data([1]), scene: .session)
+WXApi.sendCompletions[1](true); drainSendAck()
+refusedClient.onResp(SendMessageToWXResp())
+check(refusedReceipts.last?.candidateRequestID == "web-after-refusal" && refusedReceipts.last?.attribution == .singlePending, "refused image does not disable later webpage tasks")
+refusedClient.shareImage(requestID: "early-image-refusal", data: Data([1]), scene: .session)
+refusedClient.onResp(SendMessageToWXResp())
+WXApi.sendCompletions[2](false); drainSendAck()
+check(!refusedClient.canCorrelateShareReceipt && refusedReceipts.last?.candidateRequestID == nil, "observed early image receipt keeps attribution uncertain despite later refusal")
+refusedClient.shareImage(requestID: "later-refusal", data: Data([1]), scene: .session)
+WXApi.sendCompletions[3](false); drainSendAck()
+check(!refusedClient.canCorrelateShareReceipt, "later refusal cannot clear existing attribution uncertainty")
+print("PASS: image refusal preserves webpage attribution unless an image receipt was already observed")
 
 WXApi.reset(); WXApi.autoAck = false
 var earlyStatuses = [(String, String)](), earlyReceipts = [WechatReceipt]()

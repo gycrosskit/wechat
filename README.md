@@ -71,7 +71,7 @@ sequenceDiagram
     end
 ```
 
-类型图聚焦 Kotlin Android 链路，`WechatSession` 是内部单笔 pending 状态；监听器分别接收受理与回执。图片仅等待 SDK 受理；iOS 图片已发送或网页取消后不再提供分享候选，后续分享仍可提交。Kuikly `dispose()` 移除页面监听和 callback，原生 client 仍为进程级实例；取消是否成功必须等待同版原生确认。
+类型图聚焦 Kotlin Android 链路，`WechatSession` 是内部单笔 pending 状态；监听器分别接收受理与回执。图片仅等待 SDK 受理；iOS 图片受理或收到图片回执、或已发送网页取消后不再提供分享候选，后续分享仍可提交。Kuikly `dispose()` 移除页面监听和 callback，原生 client 仍为进程级实例；取消是否成功必须等待同版原生确认。
 
 ```mermaid
 classDiagram
@@ -191,7 +191,7 @@ OHOS 在 EntryAbility 配置 `WechatClient.configure(appId, context, trustedStor
 - Android 构造、授权、分享、转账、取消与 attach/detach 允许任意线程；主线程即时执行，后台排队，图片计算仍在专用 imageExecutor。Unit 返回不代表 SDK 受理；同步 Boolean `handleIntent` 仍限定 Main，兼容旧 false 表示未处理（含 SDK 异常），后台必须使用 callback 重载，不阻塞等待。
 - Android Main 取消尚未执行的入队请求后，该请求不会打开微信。`cancel` 返回不保证清除；存储清除失败保留 pending/owner，不伪造 CANCELLED 或 FAILED 终态，未知 ID 不通知终态。无 owner 的回执支持晚监听；有 owner 的迟回执只交给同一 listener（detach 后重新 attach 也可回放），新 listener 不接旧 owner 结果。
 - `REQUESTED` 只表示 SDK 受理。Android/OHOS 按 transaction、类型和 OAuth state 验证回执；iOS 分享没有 transaction，`requestId == nil`，`SINGLE_PENDING` 只是当前单笔任务的本地候选，不能当成 SDK 准确关联或资金凭据。
-- 图片只报告 SDK 提交结果，受理后释放占用，不持久恢复或交付业务回执。网页保留任务回执关联；iOS 图片交 SDK 或已发送网页取消后，`canCorrelateShareReceipt` 永久为 false，分享回执为 `UNATTRIBUTED`，后续网页也只等受理。宿主此时清理任务关联，不能把旧回执用于新任务，也不能重建 client 绕过归属边界。
+- 图片只报告 SDK 提交结果，受理后释放占用，不持久恢复或交付业务回执。网页保留任务回执关联；iOS 图片受理或已收到图片回执、或已发送网页取消后，`canCorrelateShareReceipt` 永久为 false，分享回执为 `UNATTRIBUTED`，后续网页也只等受理。宿主此时清理任务关联，不能把旧回执用于新任务，也不能重建 client 绕过归属边界。
 - 冷启动恢复需要宿主提供同步原子可信 store，发送前保存、消费/取消前清除。不能从 Intent/Want/URL 生成恢复记录；iOS 只恢复 OAuth。归一回执的迟监听缓存仅限当前进程，业务服务端仍需兜底。
 - 图片最大 25 MiB，缩略图最大 32 KiB；Android 大于 10 MiB 需满足专用客户端版本门槛。指定联系人由 Android 和当前 iOS 源码支持，需同 App 可信接收者和发送者 openId；Android 保留 SDK 客户端版本门槛，iOS 使用官方场景及收件人字段并等待真实 SDK 受理/回执。OHOS 仍不支持，不降级普通好友；iOS 最低客户端条件及真实发送待设备验收。
 - 凭据、state、Code、原始回跳与商户参数不得写入日志。`cancel` 只能结束本地等待；库不实现普通 `PayReq` APP 支付。
