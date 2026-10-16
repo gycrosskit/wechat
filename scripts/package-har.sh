@@ -6,6 +6,9 @@ export NODE_HOME="$HARMONY_CLT_HOME/tool/node"
 export DEVECO_SDK_HOME="$HARMONY_CLT_HOME/sdk"
 export PATH="$NODE_HOME/bin:$HARMONY_CLT_HOME/ohpm/bin:$HARMONY_CLT_HOME/bin:$PATH"
 test ! -e build/release-candidate
+export TYPESCRIPT_PATH="$HARMONY_CLT_HOME/ohpm/node_modules/typescript"
+node tests/wechat.cjs
+node tests/preferences-store.cjs
 (
   cd ohos
   ohpm install --all

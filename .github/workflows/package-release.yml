@@ -2,7 +2,7 @@ name: Package release candidate
 on:
   push:
     branches: ['codex/**']
-    paths: ['build.gradle.kts', '.github/workflows/package-release.yml']
+    paths: ['build.gradle.kts', '.github/workflows/package-release.yml', 'scripts/package-maven.sh']
   workflow_dispatch:
 permissions:
   contents: read

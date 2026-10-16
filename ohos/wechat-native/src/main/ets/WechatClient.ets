@@ -89,10 +89,11 @@ export class WechatClient implements wx.WXApiEventHandler {
   handleWant(want: Want): boolean { try { return this.api.handleWant(want, this); } catch (_) { return false; } }
   onReq(_req: wx.BaseReq): void {}
   onResp(resp: wx.BaseResp): void {
-    if (resp instanceof wx.SendMessageToWXResp) {
-      const path = this.imageFiles.get(resp.transaction);
+    const transaction = resp.transaction;
+    if (resp instanceof wx.SendMessageToWXResp && transaction) {
+      const path = this.imageFiles.get(transaction);
       if (path) {
-        this.imageFiles.delete(resp.transaction); this.removeFile(path);
+        this.imageFiles.delete(transaction); this.removeFile(path);
         return;
       }
     }
