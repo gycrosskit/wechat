@@ -25,7 +25,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with:
+          cache-read-only: true
       - name: Identify Native toolchain
         id: native-key
         run: python3 scripts/ci-native-cache.py --key >> "$GITHUB_OUTPUT"
