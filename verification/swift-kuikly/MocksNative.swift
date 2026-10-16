@@ -10,12 +10,13 @@ public final class WechatClient {
     struct Observer { let owns: (String) -> Bool; let submitted: (String, String) -> Void; let receipt: (WechatReceipt) -> Void }
     var observers = [UUID: Observer](); var starts = [String](); var cancelled = [String](); var cancellationSucceeds = true
     var trusted = Set<String>(); var duringRegistration: (() -> Void)?
+    public private(set) var canCorrelateShareReceipt = true
     public func addModuleListener(owns: @escaping (String) -> Bool, onSubmitted: @escaping (String, String) -> Void, onReceipt: @escaping (WechatReceipt) -> Void) -> UUID { let id = UUID(); observers[id] = Observer(owns: owns, submitted: onSubmitted, receipt: onReceipt); duringRegistration?(); return id }
     public func removeModuleListener(_ id: UUID) { observers.removeValue(forKey: id) }
     public func hasModuleOwner(requestID: String) -> Bool { observers.values.contains { $0.owns(requestID) } }
     public func canResume(requestID: String) -> Bool { trusted.contains(requestID) && !hasModuleOwner(requestID: requestID) }
     public func authorize(requestID: String) { precondition(Thread.isMainThread); starts.append(requestID) }
-    public func shareImage(requestID: String, data: Data, scene: WechatScene, recipientID: String?, senderOpenID: String?) { starts.append(requestID) }
+    public func shareImage(requestID: String, data: Data, scene: WechatScene, recipientID: String?, senderOpenID: String?) { starts.append(requestID); canCorrelateShareReceipt = false }
     public func shareWebPage(requestID: String, url: String, title: String, description: String, thumbnail: Data, scene: WechatScene) { starts.append(requestID) }
     public func openMerchantTransfer(requestID: String, merchantID: String, appID: String, packageValue: String) { starts.append(requestID) }
     public func cancel(requestID: String) { _ = cancelWithResult(requestID: requestID) }

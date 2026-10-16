@@ -121,6 +121,11 @@ public final class WechatClient: NSObject, WXApiDelegate {
     }
     /// Main：只移除这个 Renderer 的监听。
     public func removeModuleListener(_ id: UUID) { precondition(Thread.isMainThread); moduleListeners.removeValue(forKey: id) }
+    /// Main：true 仅表示可提供单笔分享候选；图片受理、已收到图片回执或已发送分享取消后恒为 false。
+    public var canCorrelateShareReceipt: Bool {
+        precondition(Thread.isMainThread)
+        return session.canCorrelateShareReceipt
+    }
     /// Main：已有 Renderer 持有的 ID 不可由新 Renderer 重复提交或认领。
     public func hasModuleOwner(requestID: String) -> Bool {
         precondition(Thread.isMainThread)
@@ -160,10 +165,10 @@ public final class WechatClient: NSObject, WXApiDelegate {
         request.state = state
         send(request, id: requestID)
     }
-    /// Main 分享编码图片，最大 25 MiB；指定联系人使用同 App 的可信双方 openId，不降级普通好友。
+    /// Main 分享编码图片，最大 25 MiB；仅等待 SDK 受理，指定联系人使用同 App 的可信双方 openId。
     public func shareImage(requestID: String, data: Data, scene: WechatScene, recipientID: String? = nil, senderOpenID: String? = nil) {
         precondition(Thread.isMainThread)
-        guard begin(requestID, sharing: true) else { return }
+        guard begin(requestID, sharing: .submissionOnly) else { return }
         if let recipientID {
             guard !recipientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, scene == .session else { reject(requestID, "invalid_content"); return }
             guard senderOpenID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { reject(requestID, "unsupported"); return }
@@ -179,7 +184,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
     /// Main 分享无凭据 HTTP(S) 页面；标题/描述限制同时按字符和 UTF-8 字节截断。
     public func shareWebPage(requestID: String, url: String, title: String, description: String, thumbnail: Data, scene: WechatScene) {
         precondition(Thread.isMainThread)
-        guard begin(requestID, sharing: true) else { return }
+        guard begin(requestID, sharing: .tracked) else { return }
         let address = URLComponents(string: url)
         guard ["http", "https"].contains(address?.scheme?.lowercased() ?? ""), address?.host?.isEmpty == false, address?.user == nil, address?.password == nil,
               url.utf8.count <= 10 * 1024, !thumbnail.isEmpty, thumbnail.count <= 25 * 1024 * 1024, let thumb = Self.thumbnail(thumbnail) else { reject(requestID, "invalid_content"); return }
@@ -203,7 +208,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
         request.query = "mchId=\(merchant)&appId=\(app)&package=\(package)"
         send(request, id: requestID)
     }
-    /// Main 清除本地等待，不能关闭微信；已发送分享取消后隔离本实例分享，避免错认迟回执。
+    /// Main 清除本地等待，不能关闭微信；已发送分享取消后，后续分享回执不再提供候选归属。
     public func cancel(requestID: String) { _ = cancelWithResult(requestID: requestID) }
     /// Main：false 表示未知或可信 journal 清除失败，保留原等待，允许重试。
     @discardableResult public func cancelWithResult(requestID: String) -> Bool {
@@ -224,8 +229,8 @@ public final class WechatClient: NSObject, WXApiDelegate {
             deliver(WechatReceipt(requestID: id, kind: .authorization, errorCode: auth.errCode == 0 && code == nil ? -1 : auth.errCode, authorizationCode: code, pageResult: nil, attribution: .verified))
         } else if resp is SendMessageToWXResp {
             finishCallback(callbackDigest, handled: true)
-            guard let candidate = session.consumeShare() else { return }
-            deliver(WechatReceipt(requestID: nil, kind: .share, errorCode: resp.errCode, authorizationCode: nil, pageResult: nil, candidateRequestID: candidate, attribution: .singlePending))
+            let candidate = session.consumeShare()
+            deliver(WechatReceipt(requestID: nil, kind: .share, errorCode: resp.errCode, authorizationCode: nil, pageResult: nil, candidateRequestID: candidate, attribution: candidate == nil ? .unattributed : .singlePending))
         } else if let transfer = resp as? WXOpenBusinessViewResp, transfer.businessType == "requestMerchantTransfer" {
             finishCallback(callbackDigest, handled: true)
             let data = transfer.extMsg?.data(using: .utf8)
@@ -238,7 +243,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
         callbacks.removeValue(forKey: digest)
         if handled { callbackDigests.insert(digest) }
     }
-    private func begin(_ id: String, state: String? = nil, sharing: Bool = false) -> Bool {
+    private func begin(_ id: String, state: String? = nil, sharing: WechatSession.ShareMode? = nil) -> Bool {
         if let status = session.begin(id, state: state, sharing: sharing) { notifySubmitted(id, status); return false }
         guard registered else { reject(id, "failed"); return false }
         guard WXApi.isWXAppInstalled() else { reject(id, "not_installed"); return false }
@@ -259,7 +264,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
         send(request, id: id)
     }
     private func send(_ request: BaseReq, id: String) {
-        if request is SendMessageToWXReq { session.dispatchedShare(id) }
+        if request is SendMessageToWXReq, !session.dispatchedShare(id) { return }
         WXApi.send(request) { [weak self] accepted in
             DispatchQueue.main.async {
                 guard let self, self.session.submitted(id, accepted: accepted) else { return }

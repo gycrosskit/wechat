@@ -34,7 +34,7 @@ class ReceiptProbe {
     var statuses: [String] = []
     var accepted = true
     func deliver(_ value: WechatReceipt) { receipt = value }
-    func begin(_ id: String, state: String? = nil, sharing: Bool = false) -> Bool {
+    func begin(_ id: String, state: String? = nil, sharing: WechatSession.ShareMode? = nil) -> Bool {
         if let status = session.begin(id, state: state, sharing: sharing) { statuses.append(status); return false }
         return true
     }
@@ -68,10 +68,10 @@ let request = target.requests[0]
 precondition(request.scene == 3 && request.toUserOpenId == "receiver" && request.openID == "sender")
 precondition(!request.bText && request.message?.mediaObject?.imageData == Data([1]))
 target.shareImage(requestID: "overlap", data: Data([1]), scene: .session)
-precondition(target.statuses.last == "busy" && target.requests.count == 1)
+precondition(target.statuses.last == "requested" && target.requests.count == 2)
 target.onResp(SendMessageToWXResp())
-precondition(target.receipt?.requestID == nil && target.receipt?.candidateRequestID == "target")
-precondition(target.receipt?.attribution == .singlePending)
+precondition(target.receipt?.requestID == nil && target.receipt?.candidateRequestID == nil)
+precondition(target.receipt?.attribution == .unattributed)
 for scene in [WechatScene.session, .timeline] {
     let ordinary = ReceiptProbe()
     ordinary.shareImage(requestID: "ordinary", data: Data([1]), scene: scene, senderOpenID: "ignored")
@@ -100,16 +100,56 @@ for bytes in [Data(), Data(repeating: 0, count: 25 * 1024 * 1024 + 1)] {
 let refused = ReceiptProbe(); refused.accepted = false
 refused.shareImage(requestID: "refused", data: Data([1]), scene: .session, recipientID: "receiver", senderOpenID: "sender")
 precondition(refused.statuses == ["failed"])
-precondition(refused.session.begin("retry", sharing: true) == nil)
+precondition(refused.session.begin("retry", sharing: .tracked) == nil)
 let cancelled = ReceiptProbe()
 cancelled.shareImage(requestID: "cancel", data: Data([1]), scene: .session, recipientID: "receiver", senderOpenID: "sender")
-precondition(cancelled.session.cancel("cancel"))
+precondition(!cancelled.session.cancel("cancel"))
 cancelled.onResp(SendMessageToWXResp())
-precondition(cancelled.receipt == nil && cancelled.session.begin("late", sharing: true) == "unsupported")
-print("Production Swift targeted/ordinary image requests, trusted identities, SDK refusal and late-receipt isolation passed")
+precondition(cancelled.receipt?.attribution == .unattributed && cancelled.session.begin("late", sharing: .tracked) == nil)
+print("Production Swift targeted/ordinary submission-only images, trusted identities, SDK refusal and unattributed late receipt passed")
 precondition(wechatText(String(repeating: "e\\u{0301}", count: 300), characters: 256, bytes: 512) == String(repeating: "e\\u{0301}", count: 128))
 precondition(wechatText("a😀", characters: 2, bytes: 512) == "a")
 print("Production Swift UTF-16 and UTF-8 text limits match Kotlin and OHOS")
+let repeating = WechatSession()
+for id in ["image-1", "image-2", "image-3"] {
+    precondition(repeating.begin(id, sharing: .submissionOnly) == nil)
+    precondition(repeating.dispatchedShare(id))
+    precondition(repeating.begin(id + "-overlap") == "busy")
+    precondition(repeating.submitted(id, accepted: true))
+}
+precondition(repeating.begin("after-images-auth", state: "auth-state") == nil)
+precondition(repeating.submitted("after-images-auth", accepted: true))
+precondition(repeating.consumeAuthorization("auth-state") == "after-images-auth")
+precondition(repeating.begin("after-images-transfer") == nil)
+precondition(repeating.submitted("after-images-transfer", accepted: true))
+precondition(repeating.begin("web-after-images", sharing: .tracked) == nil)
+precondition(repeating.dispatchedShare("web-after-images"))
+precondition(repeating.submitted("web-after-images", accepted: true))
+precondition(repeating.consumeShare() == nil)
+precondition(!repeating.cancel("web-after-images") && !repeating.canCorrelateShareReceipt)
+precondition(repeating.begin("image-after-web-cancel", sharing: .submissionOnly) == nil)
+let unsent = WechatSession()
+precondition(unsent.begin("unsent", sharing: .submissionOnly) == nil && unsent.cancel("unsent"))
+precondition(!unsent.dispatchedShare("unsent"))
+precondition(unsent.begin("fresh-web", sharing: .tracked) == nil && unsent.dispatchedShare("fresh-web"))
+precondition(unsent.consumeShare() == "fresh-web")
+precondition(unsent.begin("before-ack") == "busy")
+precondition(unsent.submitted("fresh-web", accepted: true))
+precondition(unsent.begin("new-image", sharing: .submissionOnly) == nil)
+precondition(!unsent.submitted("fresh-web", accepted: false) && !unsent.cancel("fresh-web"))
+precondition(unsent.begin("still-busy") == "busy")
+precondition(unsent.dispatchedShare("new-image") && unsent.cancel("new-image"))
+precondition(unsent.begin("new-web", sharing: .tracked) == nil && unsent.dispatchedShare("new-web"))
+precondition(!unsent.submitted("new-image", accepted: true) && !unsent.cancel("new-image"))
+precondition(unsent.submitted("new-web", accepted: true) && unsent.consumeShare() == nil)
+precondition(unsent.begin("image-after-unattributed-web", sharing: .submissionOnly) == nil)
+let cancelledWeb = WechatSession()
+precondition(cancelledWeb.begin("accepted-web", sharing: .tracked) == nil && cancelledWeb.dispatchedShare("accepted-web"))
+precondition(cancelledWeb.submitted("accepted-web", accepted: true) && cancelledWeb.cancel("accepted-web"))
+precondition(!cancelledWeb.canCorrelateShareReceipt)
+precondition(cancelledWeb.begin("after-accepted-web-cancel", sharing: .submissionOnly) == nil)
+print("Production Swift image retries, early receipts, auth/transfer, unsent cancellation and stale ack/cancel isolation passed")
+
 """)
 # 直接编译生产字段/方法，不重写回放算法；SDK只在既有分享探针中替身。
 with (output / "main.swift").open("a") as fixture:

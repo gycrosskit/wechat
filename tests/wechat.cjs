@@ -76,7 +76,24 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  assert.equal(await client.shareImage('image', 'aGVsbG8=', 'timeline'), 'requested');
  assert.equal(files.size, 1); assert.equal(writes, 3);
  const img = sent.at(-1); assert.equal(img.scene, 1);
- client.onResp(response(wx.SendMessageToWXResp, img)); await flush(); assert.equal(files.size, 0);
+ assert.equal(client.canResume('image'), false);
+ assert.equal(client.cancel('image'), false); assert.equal(files.size, 1, 'accepted image URI must remain readable');
+ assert.equal(await client.shareImage('image-repeat', 'aGVsbG8=', 'session'), 'requested');
+ const repeatImg = sent.at(-1); assert.equal(files.size, 2);
+ const beforeImageReceipts = receipts.length;
+ assert.equal(await client.shareWebPage('after-image-web', 'https://example.com', '', '', 'aA==', 'session'), 'requested');
+ const afterImageWeb = sent.at(-1);
+ client.onResp(response(wx.SendAuthResp, img, { state: 'wrong-kind', code: 'code' })); assert.equal(files.size, 2);
+ client.onResp(response(wx.SendMessageToWXResp, img)); await flush(); assert.equal(files.size, 1);
+ assert.equal(receipts.length, beforeImageReceipts); assert.equal(client.canResume('after-image-web'), true);
+ assert.equal(client.cancel('image'), false); assert.equal(files.size, 1, 'old image cancel cannot delete the newer image');
+ client.onResp(response(wx.SendMessageToWXResp, img)); assert.equal(client.canResume('after-image-web'), true);
+ client.onResp(response(wx.SendMessageToWXResp, afterImageWeb)); assert.equal(receipts.at(-1).requestId, 'after-image-web');
+ assert.equal(await client.openMerchantTransfer('after-image-transfer', 'merchant', 'app', 'package'), 'requested');
+ const afterImageTransfer = sent.at(-1);
+ client.onResp(response(wx.SendMessageToWXResp, repeatImg)); await flush(); assert.equal(files.size, 0);
+ assert.equal(client.canResume('after-image-transfer'), true);
+ client.onResp(response(wx.OpenBusinessViewResp, afterImageTransfer, { businessType: 'requestMerchantTransfer' }));
  const before = removed; accepted = false;
  assert.equal(await client.shareImage('image-rejected', 'aGVsbG8=', 'session'), 'failed'); await flush(); assert(removed > before); assert.equal(files.size, 0);
  accepted = true; let finish; packingGate = new Promise(r => finish = r);
@@ -85,6 +102,40 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  assert(released >= 9);
  // 请求进程 -> 丢失所有组件内存 -> 回跳先到 -> 可信日志恢复 -> 后挂 Kuikly 监听。
  const fresh = () => { const mod = { exports: {} }; vm.runInNewContext(output, { exports: mod.exports, require: key => sdk[key], Uint8Array, ArrayBuffer, Set, Map }); return mod.exports.WechatClient; };
+ // 图片不进入可信业务日志，SDK受理后可立即开始下一笔；文件生命周期独立于业务等待。
+ installed = true;
+ const ImageOnly = fresh(); let imageJournalWrites = 0;
+ const imageOnly = ImageOnly.configure('host-app-id', { cacheDir: '/tmp' }, { load: () => null, save: () => { imageJournalWrites++; throw Error('image must not touch journal'); } });
+ assert.equal(await imageOnly.shareImage('image-no-journal', 'aGVsbG8=', 'session'), 'requested'); const noJournalReq = sent.at(-1);
+ assert.equal(imageJournalWrites, 0); assert.equal(imageOnly.canResume('image-no-journal'), false);
+ imageOnly.onResp(response(wx.SendMessageToWXResp, noJournalReq)); await flush(); assert.equal(files.size, 0);
+ const ImageFlow = fresh(); let imageSaved = null; const imageResults = [];
+ const imageFlow = ImageFlow.configure('host-app-id', { cacheDir: '/tmp' }, { load: () => imageSaved, save: value => { imageSaved = value; } });
+ imageFlow.addListener(value => imageResults.push(value));
+ accepted = 'delay'; const delayedImage = imageFlow.shareImage('image-delayed', 'aGVsbG8=', 'session'); await new Promise(resolve => setImmediate(resolve));
+ const delayedImageReq = sent.at(-1); const delayedImageAck = pendingSend;
+ assert.equal(imageSaved, null); assert.equal(files.size, 1);
+ assert.equal(await imageFlow.shareImage('image-submitting-busy', 'aGVsbG8=', 'session'), 'busy');
+ assert.equal(imageFlow.cancel('image-delayed'), true); await flush(); assert.equal(files.size, 1, 'in-flight SDK can still read the URI');
+ accepted = true; assert.equal(await imageFlow.authorize('image-successor-auth'), 'requested'); const successorAuth = sent.at(-1);
+ delayedImageAck(true); assert.equal(await delayedImage, 'cancelled'); assert.equal(files.size, 1);
+ assert.equal(imageSaved.requestId, 'image-successor-auth'); assert.equal(imageFlow.canResume('image-successor-auth'), true);
+ imageFlow.onResp(response(wx.SendMessageToWXResp, delayedImageReq)); await flush(); assert.equal(files.size, 0);
+ assert.equal(imageSaved.requestId, 'image-successor-auth'); assert.equal(imageResults.length, 0);
+ imageFlow.onResp(response(wx.SendAuthResp, successorAuth, { state: successorAuth.state, code: 'successor-code' })); assert.equal(imageResults.at(-1).requestId, 'image-successor-auth');
+ // SDK回执可能早于send Promise；回执只清图片，受理返回前仍互斥。
+ accepted = 'delay'; const earlyImage = imageFlow.shareImage('image-early-receipt', 'aGVsbG8=', 'session'); await new Promise(resolve => setImmediate(resolve));
+ const earlyImageReq = sent.at(-1); const earlyImageAck = pendingSend;
+ imageFlow.onResp(response(wx.SendMessageToWXResp, earlyImageReq)); await flush(); assert.equal(files.size, 0);
+ assert.equal(await imageFlow.authorize('image-before-ack-busy'), 'busy');
+ earlyImageAck(true); assert.equal(await earlyImage, 'requested'); assert.equal(imageFlow.canResume('image-early-receipt'), false);
+ assert.equal(imageResults.length, 1); accepted = true;
+ accepted = 'delay'; const refusedAfterCancel = imageFlow.shareImage('image-cancelled-rejected', 'aGVsbG8=', 'session'); await new Promise(resolve => setImmediate(resolve));
+ const refusedImageAck = pendingSend; assert.equal(imageFlow.cancel('image-cancelled-rejected'), true);
+ accepted = true; assert.equal(await imageFlow.shareImage('image-newer-file', 'aGVsbG8=', 'session'), 'requested'); const newerImageReq = sent.at(-1);
+ assert.equal(files.size, 2); refusedImageAck(false); assert.equal(await refusedAfterCancel, 'cancelled'); await flush();
+ assert.equal(files.size, 1); assert(files.has(newerImageReq.message.mediaObject.uri), 'old rejection cannot remove the newer file');
+ imageFlow.onResp(response(wx.SendMessageToWXResp, newerImageReq)); await flush(); assert.equal(files.size, 0);
  let saved = null;
  const store = { load: () => saved, save: request => { saved = request ? { ...request } : null; } };
  installed = true;
@@ -172,10 +223,11 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  failSourceRelease = true;
  cancelPage.call('image', JSON.stringify({ requestId: 'accepted-release-failure', data: 'aGVsbG8=', scene: 'session' }), value => submissions.push(value.status));
  await new Promise(resolve => setImmediate(resolve)); failSourceRelease = false;
- const releaseReq = sent.at(-1); assert.equal(submissions.at(-1), 'pending');
- assert.equal(cancelSaved.requestId, 'accepted-release-failure');
+ const releaseReq = sent.at(-1); assert.equal(submissions.at(-1), 'requested');
+ assert.equal(cancelSaved, null); assert.equal(cancelClient.canResume('accepted-release-failure'), false);
+ callCancel('accepted-release-failure'); assert.equal(cancelAcks.at(-1), 'no_pending');
  cancelClient.handleWant({ verified: true, response: response(wx.SendMessageToWXResp, releaseReq) });
- await flush(); assert.equal(cancelReceipts.at(-1).requestId, 'accepted-release-failure'); assert.equal(cancelSaved, null);
+ await flush(); assert.equal(cancelReceipts.length, 1); assert.equal(cancelSaved, null); assert.equal(files.size, 0);
  cancelPage.call('authorize', JSON.stringify({ requestId: 'destroy-clear-failure' }), value => submissions.push(value.status)); await flush();
  const destroyReq = sent.at(-1); failClear = true;
  assert.throws(() => cancelPage.onDestroy(), /disk unavailable/);
@@ -187,7 +239,7 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  restoredPage.call('listen', JSON.stringify({ restoredRequestId: 'destroy-clear-failure' }), value => restoredReceipts.push(value));
  cancelClient.handleWant({ verified: true, response: response(wx.SendAuthResp, destroyReq, { state: destroyReq.state, code: 'restored' }) });
  assert.equal(restoredReceipts.length, 1); assert.equal(restoredReceipts[0].requestId, 'destroy-clear-failure');
- assert.equal(cancelReceipts.length, 2, 'destroyed owner cannot receive the restored receipt');
+ assert.equal(cancelReceipts.length, 1, 'destroyed owner cannot receive the restored receipt');
  restoredPage.onDestroy(); foreignPage.onDestroy();
  console.log('Real OHOS cancel bridge: failed clear retains owner, late receipt, unknown/foreign/completed ID, retry and late submission ack passed');
 
@@ -246,5 +298,6 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  assert.equal(boundary.canResume(boundarySaved.requestId), true);
  console.log('OHOS replay revoke/replace/re-register retains remaining filtered receipts once; UTF16 ID boundaries passed');
  console.log('OHOS cold process, SDK verification, trusted journal, late Kuikly listener, cancellation and replay checks passed');
+ console.log('OHOS image repeat submission, no journal/resume/business receipt, busy until SDK ack, early/late receipt isolation and in-flight file retention passed');
  console.log('OHOS OAuth state, transaction, duplicate/late callbacks, concurrency, raw transfer encoding, URL validation and temporary file lifecycle passed');
 })().catch(e => { console.error(e); process.exitCode = 1; });

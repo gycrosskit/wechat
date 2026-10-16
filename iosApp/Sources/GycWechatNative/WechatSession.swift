@@ -22,9 +22,12 @@ public protocol WechatAuthorizationStore {
 final class WechatSession {
     private var usedIDs = Set<String>()
     private var submitting: String?
-    private var share: String?
-    private var shareDispatched = false
-    private var shareQuarantined = false
+    enum ShareMode { case submissionOnly, tracked }
+    private var share: (id: String, mode: ShareMode, dispatched: Bool)?
+    private var shareAttributionUncertain = false
+    var canCorrelateShareReceipt: Bool {
+        !shareAttributionUncertain && !(share?.mode == .submissionOnly && share?.dispatched == true)
+    }
     private var authorization: WechatPendingAuthorization?
     private let store: WechatAuthorizationStore?
     private var restorationFailed = false
@@ -40,10 +43,9 @@ final class WechatSession {
         !request.requestID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && request.requestID.utf16.count <= 128 &&
             !request.state.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && request.state.utf16.count <= 256
     }
-    func begin(_ id: String, state: String? = nil, sharing: Bool = false) -> String? {
+    func begin(_ id: String, state: String? = nil, sharing: ShareMode? = nil) -> String? {
         guard !restorationFailed else { return "failed" }
         guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, id.utf16.count <= 128, !usedIDs.contains(id) else { return "invalid_content" }
-        if sharing && shareQuarantined { return "unsupported" }
         guard submitting == nil, authorization == nil, share == nil else { return "busy" }
         usedIDs.insert(id)
         if let state {
@@ -52,25 +54,32 @@ final class WechatSession {
             do { try store?.save(request) } catch { return "failed" }
             authorization = request
         }
-        if sharing { share = id; shareDispatched = false }
+        if let sharing { share = (id, sharing, false) }
         submitting = id
         return nil
     }
     func submitted(_ id: String, accepted: Bool) -> Bool {
         guard submitting == id else { return false }
         submitting = nil
-        if !accepted, share == id { share = nil; shareDispatched = false }
+        if accepted, share?.id == id, share?.mode == .submissionOnly { shareAttributionUncertain = true }
+        if share?.id == id, !accepted || share?.mode == .submissionOnly || shareAttributionUncertain { share = nil }
         if !accepted, authorization?.requestID == id {
             do { try store?.save(nil) } catch { return false }
             authorization = nil
         }
         return true
     }
-    func dispatchedShare(_ id: String) { if share == id { shareDispatched = true } }
+    @discardableResult func dispatchedShare(_ id: String) -> Bool {
+        guard submitting == id, share?.id == id else { return false }
+        share?.dispatched = true
+        return true
+    }
     func consumeShare() -> String? {
-        guard !shareQuarantined, let id = share, shareDispatched else { return nil }
-        share = nil; shareDispatched = false
-        return id
+        // 早于提交结果的图片回执已经证明交付；后续拒绝结果不能恢复关联能力。
+        if share?.mode == .submissionOnly, share?.dispatched == true { shareAttributionUncertain = true }
+        guard !shareAttributionUncertain, let pending = share, pending.mode == .tracked, pending.dispatched else { return nil }
+        share = nil
+        return pending.id
     }
     func consumeAuthorization(_ state: String?) -> String? {
         guard let auth = authorization, state == auth.state else { return nil }
@@ -80,14 +89,13 @@ final class WechatSession {
     }
     func canResume(_ id: String) -> Bool { authorization?.requestID == id }
     func cancel(_ id: String) -> Bool {
-        let active = submitting == id || authorization?.requestID == id || share == id
+        let active = submitting == id || authorization?.requestID == id || share?.id == id
         if authorization?.requestID == id {
             do { try store?.save(nil) } catch { return false }
         }
-        if share == id {
-            // ponytail: 已交 SDK 后取消会隔离本实例分享；SDK 提供可靠标识后才能安全解除。
-            if shareDispatched { shareQuarantined = true }
-            share = nil; shareDispatched = false
+        if share?.id == id {
+            if share?.dispatched == true { shareAttributionUncertain = true }
+            share = nil
         }
         if submitting == id { submitting = nil }
         if authorization?.requestID == id { authorization = nil }

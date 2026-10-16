@@ -1,6 +1,36 @@
 package io.github.gycrosskit.wechat
 import kotlin.test.*
 class WechatSessionTest {
+    @Test fun imageSubmissionDoesNotPersistOrWaitForFinalReceipt() {
+        val saved = mutableListOf<WechatPendingRequest?>()
+        val session = WechatSession(object : WechatRequestStore {
+            override fun load(): WechatPendingRequest? = null
+            override fun save(request: WechatPendingRequest?) { saved.add(request) }
+        })
+        repeat(3) { index ->
+            val id = "image-$index"
+            assertNull(session.begin(id, "image-tx-$index", WechatKind.SHARE, submissionOnly = true))
+            assertEquals(WechatStatus.BUSY, session.begin("overlap-$index", "overlap-tx-$index", WechatKind.SHARE))
+            assertNull(session.consume("image-tx-$index", WechatKind.SHARE))
+            assertTrue(session.isCurrent(id))
+            assertFalse(session.finishSubmission("old-id"))
+            assertTrue(session.finishSubmission(id))
+            assertFalse(session.isCurrent(id))
+        }
+        assertTrue(saved.isEmpty())
+        assertNull(session.begin("web", "web-tx", WechatKind.SHARE))
+        assertNull(session.consume("image-tx-2", WechatKind.SHARE))
+        assertTrue(session.isCurrent("web"))
+        assertFalse(session.finishSubmission("web"))
+        assertNotNull(session.consume("web-tx", WechatKind.SHARE))
+        assertNull(session.begin("auth", "auth-tx", WechatKind.AUTHORIZATION, "state"))
+        assertNull(session.consume("image-tx-2", WechatKind.SHARE))
+        assertNotNull(session.consume("auth-tx", WechatKind.AUTHORIZATION, "state"))
+        assertNull(session.begin("transfer", "transfer-tx", WechatKind.MERCHANT_TRANSFER))
+        assertNull(session.consume("image-tx-2", WechatKind.SHARE))
+        assertNotNull(session.consume("transfer-tx", WechatKind.MERCHANT_TRANSFER))
+    }
+
     @Test fun utf16BoundariesApplyToRequestIdsAndTrustedRestoration() {
         for (id in listOf("😀".repeat(65), "e\u0301".repeat(65))) {
             assertEquals(WechatStatus.INVALID_CONTENT, WechatSession().begin(id, "tx", WechatKind.AUTHORIZATION, "state"))

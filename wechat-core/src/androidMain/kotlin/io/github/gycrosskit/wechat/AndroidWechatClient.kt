@@ -115,7 +115,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         // 入队前取得快照，调用方随后修改数组不能改变已提交内容。
         val copy = if (data.size in 1..MAX_WECHAT_IMAGE) data.copyOf() else byteArrayOf()
         submit(requestId) { request ->
-            if (!begin(request, WechatKind.SHARE)) return@submit
+            if (!begin(request, WechatKind.SHARE, submissionOnly = true)) return@submit
             if (recipientId != null && (recipientId.isBlank() || scene != WechatScene.SESSION)) { fail(request, WechatStatus.INVALID_CONTENT); return@submit }
             if (recipientId != null && (api.wxAppSupportAPI < Build.SEND_TO_SPECIFIED_CONTACT_SDK_INT || senderOpenId.isNullOrBlank())) { fail(request, WechatStatus.UNSUPPORTED); return@submit }
             if (copy.isEmpty() || copy.size > MAX_WECHAT_IMAGE) { fail(request, WechatStatus.INVALID_CONTENT); return@submit }
@@ -235,9 +235,9 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
             receipts.add(requestOwner?.listener to receipt)
         }
     }
-    private fun begin(request: Request, kind: WechatKind, state: String? = null): Boolean {
+    private fun begin(request: Request, kind: WechatKind, state: String? = null, submissionOnly: Boolean = false): Boolean {
         if (request.id in cancelledBeforeBegin) { submitted(request, WechatStatus.INVALID_CONTENT); return false }
-        val rejected = try { session.begin(request.id, request.transaction, kind, state) } catch (_: Exception) { WechatStatus.FAILED }
+        val rejected = try { session.begin(request.id, request.transaction, kind, state, submissionOnly) } catch (_: Exception) { WechatStatus.FAILED }
         if (rejected != null) { submitted(request, rejected); return false }
         currentRequest = request
         val unavailable = runCatching {
@@ -262,7 +262,10 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
     private fun send(request: Request, sdkRequest: BaseReq) {
         sdkRequest.transaction = request.transaction
         val accepted = runCatching { sdkRequest.checkArgs() && api.sendReq(sdkRequest) }.getOrDefault(false)
-        if (accepted) submitted(request, WechatStatus.REQUESTED) else fail(request, WechatStatus.FAILED)
+        if (accepted) {
+            if (session.finishSubmission(request.id) && currentRequest === request) currentRequest = null
+            submitted(request, WechatStatus.REQUESTED)
+        } else fail(request, WechatStatus.FAILED)
     }
     private fun fail(request: Request, status: WechatStatus) {
         val cleared = runCatching { session.cancel(request.id) }.getOrDefault(false)

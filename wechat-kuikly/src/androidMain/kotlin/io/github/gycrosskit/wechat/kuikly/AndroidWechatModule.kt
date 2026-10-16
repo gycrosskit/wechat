@@ -74,7 +74,7 @@ class AndroidWechatModule(private val client: AndroidWechatClient) : KuiklyRende
         if (destroyed || released || requestId !in ids) return
         if (status == WechatStatus.CANCELLED && requestId in cancelling) return
         val callback = submissions.remove(requestId)
-        if (status != WechatStatus.REQUESTED || receivedBeforeSubmission.remove(requestId)) ids.remove(requestId)
+        if (status != WechatStatus.REQUESTED || receivedBeforeSubmission.remove(requestId) || !client.hasPendingRequest(requestId)) ids.remove(requestId)
         callback?.invoke(status(status.name.lowercase()))
     }
     override fun onReceipt(receipt: WechatReceipt) {

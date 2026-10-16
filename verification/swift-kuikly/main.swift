@@ -80,3 +80,49 @@ KuiklyRenderThreadManager.paused = false; KuiklyRenderThreadManager.drain()
 precondition(contextReplies == 0 && native.observers.isEmpty)
 // End ContextQueue boundary.
 print("Production Wechat Swift receiver: submit/receipt evidence, cancellation, repeated invalidate, queued/registration races and dealloc cleanup passed (SDK/render boundaries stubbed)")
+
+// Submission-only images release Renderer ownership at SDK ack, including a nil callback.
+func shareArguments(_ id: String) -> String {
+    let args = ["requestId": id, "data": "AQ==", "thumbnail": "AQ==", "scene": "session",
+        "url": "https://example.com", "title": "title", "description": ""]
+    return String(data: try! JSONSerialization.data(withJSONObject: args), encoding: .utf8)!
+}
+let shareModule = WechatModule()
+var shareReceipts = [[String: Any]](), shareStatuses = [String]()
+_ = shareModule.hrv_call(withMethod: "listen", params: "{}", callback: { shareReceipts.append($0 as! [String: Any]) })
+precondition(native.canCorrelateShareReceipt)
+_ = shareModule.hrv_call(withMethod: "webpage", params: shareArguments("tracked-web"), callback: nil)
+precondition(native.hasModuleOwner(requestID: "tracked-web"))
+native.emitSubmitted("tracked-web", "requested")
+precondition(native.hasModuleOwner(requestID: "tracked-web"))
+native.emit(WechatReceipt(requestID: nil, candidateRequestID: "tracked-web", kind: .share, errorCode: 0, attribution: .singlePending))
+precondition(!native.hasModuleOwner(requestID: "tracked-web") && shareReceipts.count == 1)
+for id in ["image-one", "image-two", "image-three"] {
+    _ = shareModule.hrv_call(withMethod: "image", params: shareArguments(id), callback: { shareStatuses.append(($0 as! [String: Any])["status"] as! String) })
+    precondition(native.hasModuleOwner(requestID: id))
+    native.emitSubmitted(id, "requested")
+    precondition(!native.hasModuleOwner(requestID: id))
+}
+precondition(shareStatuses == ["requested", "requested", "requested"] && !native.canCorrelateShareReceipt)
+_ = shareModule.hrv_call(withMethod: "image", params: shareArguments("nil-callback-image"), callback: nil)
+native.emitSubmitted("nil-callback-image", "requested")
+precondition(!native.hasModuleOwner(requestID: "nil-callback-image"))
+_ = shareModule.hrv_call(withMethod: "webpage", params: shareArguments("unattributed-web"), callback: { shareStatuses.append(($0 as! [String: Any])["status"] as! String) })
+precondition(native.hasModuleOwner(requestID: "unattributed-web"))
+native.emit(WechatReceipt(requestID: nil, candidateRequestID: nil, kind: .share, errorCode: 0, attribution: .unattributed))
+precondition(native.hasModuleOwner(requestID: "unattributed-web") && shareReceipts.count == 1)
+native.emitSubmitted("unattributed-web", "requested")
+precondition(!native.hasModuleOwner(requestID: "unattributed-web") && shareStatuses.count == 4)
+_ = shareModule.hrv_call(withMethod: "authorize", params: "{\"requestId\":\"auth-after-image\"}", callback: nil)
+native.emitSubmitted("auth-after-image", "requested")
+precondition(native.hasModuleOwner(requestID: "auth-after-image"))
+native.emit(WechatReceipt(requestID: "auth-after-image", candidateRequestID: nil, kind: .authorization, errorCode: 0, attribution: .verified))
+precondition(!native.hasModuleOwner(requestID: "auth-after-image") && shareReceipts.count == 2)
+_ = shareModule.hrv_call(withMethod: "transfer", params: "{\"requestId\":\"unchanged-transfer\",\"merchantId\":\"merchant\",\"appId\":\"app\",\"packageValue\":\"package\"}", callback: nil)
+native.emitSubmitted("unchanged-transfer", "requested")
+precondition(native.hasModuleOwner(requestID: "unchanged-transfer"))
+let beforeShareCleanup = native.cancelled.count
+shareModule.invalidate()
+precondition(native.cancelled.count == beforeShareCleanup + 1 && native.cancelled.last == "unchanged-transfer")
+precondition(native.observers.isEmpty)
+print("Production Swift receiver: image/nil-callback ownership released at ack, unattributed webpage releases, OAuth and transfer ownership preserved")

@@ -14,7 +14,7 @@ public final class WechatModule: KRBaseModule {
     private final class OwnedRequests { var ids = Set<String>() }
     private let ownership = OwnedRequests()
     private var ids: Set<String> { get { ownership.ids } set { ownership.ids = newValue } }
-    private var submissions: [String: KuiklyRenderCallback] = [:]
+    private var submissions: [String: (callback: KuiklyRenderCallback?, awaitsReceipt: Bool)] = [:]
     private var receivedBeforeSubmission = Set<String>()
     private var cancelling = Set<String>()
     private var listener: KuiklyRenderCallback?
@@ -83,9 +83,10 @@ public final class WechatModule: KRBaseModule {
         }
         guard !client.hasModuleOwner(requestID: id) else { deliver(["status": "busy"], callback: callback); return }
         guard ["authorize", "image", "webpage", "transfer"].contains(method) else { deliver(["status": "unsupported"], callback: callback); return }
+        let awaitsReceipt = method != "image" && (method != "webpage" || client.canCorrelateShareReceipt)
         let retained = withState { () -> Bool in
             guard !invalidated, !released else { return false }
-            ids.insert(id); submissions[id] = callback; return true
+            ids.insert(id); submissions[id] = (callback, awaitsReceipt); return true
         }
         guard retained, active else { return }
         if method == "authorize" { client.authorize(requestID: id); return }
@@ -110,9 +111,10 @@ public final class WechatModule: KRBaseModule {
         let callback: KuiklyRenderCallback? = withState {
             guard !invalidated, !released, ids.contains(id) else { return nil }
             if status == "cancelled" && cancelling.contains(id) { return nil }
-            let callback = submissions.removeValue(forKey: id)
-            if status != "requested" || receivedBeforeSubmission.remove(id) != nil { ids.remove(id) }
-            return callback
+            let submission = submissions.removeValue(forKey: id)
+            let received = receivedBeforeSubmission.remove(id) != nil
+            if status != "requested" || submission?.awaitsReceipt == false || received { ids.remove(id) }
+            return submission?.callback
         }
         if active { deliver(["status": status], callback: callback) }
     }

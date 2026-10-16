@@ -123,7 +123,8 @@ jobs:
           verify_native=$(python3 -c 'import os; v=os.environ["VERSION"].split("-",1)[0]; print(str(tuple(map(int,v.split("."))) >= (0, 1, 8)).lower())')
           if [[ "$verify_native" == true ]]; then
             mkdir -p ci-diagnostics
-            render_dir=$(bash scripts/ci-build-kuikly-render.sh "$RUNNER_TEMP/kuikly-native" GycWechatNative/Kuikly wechat native-0.1.8 2> >(tee ci-diagnostics/release-native-kuikly-sdk.log >&2))
+            native_tag=$(pod ipc spec GycWechatNative.podspec | python3 -c 'import json,sys; print(json.load(sys.stdin)["source"]["tag"])')
+            render_dir=$(bash scripts/ci-build-kuikly-render.sh "$RUNNER_TEMP/kuikly-native" GycWechatNative/Kuikly wechat "$native_tag" 2> >(tee ci-diagnostics/release-native-kuikly-sdk.log >&2))
             python3 verification/swift-kuikly/verify-public-api.py "$render_dir"
             echo "framework_dir=$render_dir" >> "$GITHUB_OUTPUT"
           fi

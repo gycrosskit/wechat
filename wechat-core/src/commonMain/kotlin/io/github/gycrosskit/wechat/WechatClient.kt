@@ -6,7 +6,7 @@ enum class WechatScene { SESSION, TIMELINE }
 enum class WechatAttribution { VERIFIED, SINGLE_PENDING, UNATTRIBUTED }
 /** 微信授权、分享或商家转账确认页；转账回执不表示到账。 */
 enum class WechatKind { AUTHORIZATION, SHARE, MERCHANT_TRANSFER }
-/** 提交状态；REQUESTED 只表示 SDK 受理，最终结果由回执交付。 */
+/** 提交状态；REQUESTED 只表示 SDK 受理，图片仅交付此阶段结果，其余回执另行交付。 */
 enum class WechatStatus { REQUESTED, BUSY, NOT_INSTALLED, UNSUPPORTED, INVALID_CONTENT, FAILED, CANCELLED }
 
 /**
@@ -65,7 +65,7 @@ interface WechatListener {
 interface WechatClient {
     /** 请求 OAuth code；组件生成随机 state 并严格匹配回跳，宿主后端负责换票。 */
     fun authorize(requestId: String)
-    /** recipientId 为同 App 可信目标 openId；senderOpenId 为当前发送者的可信 openId。非空目标不降级普通好友。 */
+    /** 只交付提交结果，不等待最终分享回执。recipientId 为可信目标 openId；senderOpenId 为当前发送者 openId，非空目标不降级普通好友。 */
     fun shareImage(requestId: String, data: ByteArray, scene: WechatScene, recipientId: String? = null, senderOpenId: String? = null)
     /** 分享无凭据 HTTP(S) 页面；缩略图是编码图片，标题/描述按厂商字符与 UTF-8 字节限制截断。 */
     fun shareWebPage(requestId: String, url: String, title: String, description: String, thumbnail: ByteArray, scene: WechatScene)
