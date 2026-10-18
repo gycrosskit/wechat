@@ -1,5 +1,10 @@
 # 更新记录
 
+## HAR 0.1.8-rc.1（2026-10-18）
+
+- OHOS 修复 early receipt 与 owner 清理重入时序；独立候选标签 `har-0.1.8-rc.1`，Maven `0.1.9`、Git Pod / SPM `native-0.1.9` 保持不变。
+- HAR 构建及公开 Release 精确消费由组件专用 Jenkins 入口分别执行；源码、checksum、公开消费、Registry 与设备业务分别记录，准备状态不表示已发布。
+
 ## 0.1.7（2026-10-08）
 
 - Swift OAuth 参数按 UTF-16 限额验证；Swift/OHOS 监听回放在撤销或替换后停止，OHOS 实时监听快照避免重入重复投递。配套 native-0.1.6 / HAR 0.1.6；收窄 CI 到源码、轻量 main 与精确 Release 消费。

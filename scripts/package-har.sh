@@ -16,19 +16,14 @@ node tests/preferences-store.cjs
 )
 mkdir -p build/release-candidate
 python3 - <<'PY'
-import json
 import shutil
-import tarfile
 from pathlib import Path
 packages = list(Path('ohos/wechat-native/build/default/outputs/default').glob('*.har'))
 assert len(packages) == 1, f'Expected one HAR, got {len(packages)}'
-version = json.loads(Path('ohos/wechat-native/oh-package.json5').read_text())['version']
-with tarfile.open(packages[0]) as archive:
-    package = json.load(archive.extractfile('package/oh-package.json5'))
-    assert package['name'] == '@gycrosskit/wechat-native' and package['version'] == version
-    assert version in archive.extractfile('package/CHANGELOG.md').read().decode()
 shutil.copyfile(packages[0], 'build/release-candidate/WechatNative.har')
 PY
+version=$(python3 -c 'import json; print(json.load(open("ohos/wechat-native/oh-package.json5"))["version"])')
+python3 scripts/check-har.py build/release-candidate/WechatNative.har "$version"
 ohpm prepublish build/release-candidate/WechatNative.har
 shasum -a 256 build/release-candidate/WechatNative.har | awk '{print $1}' > build/release-candidate/har.sha256
 git rev-parse HEAD > build/release-candidate/source-commit.txt

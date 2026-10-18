@@ -1,0 +1,2 @@
+# Tag SHA256 SourceCommit
+# Add only the actual Jenkins HAR hash and source-commit.txt after downloading and checking both.

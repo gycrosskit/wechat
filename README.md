@@ -1,6 +1,6 @@
 # GY CrossKit Wechat
 
-本次发布候选：Maven `0.1.9`、Git Pod / SPM `native-0.1.9`（Pod `0.1.9`）、HAR `0.1.7`。修复普通图片重复分享；iOS 无法证明分享回执归属时保持 `UNATTRIBUTED`，不完成网页任务。发布和远程消费状态见[本版 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.9)，真机业务待验收。
+当前兼容组合：Maven `0.1.9`、Git Pod / SPM `native-0.1.9`（Pod `0.1.9`）、HAR `0.1.8-rc.1`。修复普通图片重复分享；iOS 无法证明分享回执归属时保持 `UNATTRIBUTED`，不完成网页任务。发布和远程消费状态见[本版 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.9)，HAR 候选独立采用 [`har-0.1.8-rc.1`](https://github.com/gycrosskit/wechat/releases/tag/har-0.1.8-rc.1)，修复 OHOS early receipt / owner 清理时序；该候选尚待构建、冻结及公开消费，真机业务待验收。
 
 2026-10-09 已发布：Maven `0.1.8`、Git Pod `native-0.1.7`（内部 `0.1.7`），HAR 不变。新增 Android/iOS Kuikly Native Module receiver 与平台变体；已发布 Maven `0.1.7` 不包含此能力。iOS receiver 从可选 `GycWechatNative/Kuikly` Git Pod subspec 导出，默认 Native Pod / Wechat SPM 不自动依赖 Kuikly。具体发布与远程验收结果见[对应 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.8)。接线见[接入指南的 Native receiver](docs/接入指南.md#androidios-kuikly-native-receiver)。
 
@@ -158,13 +158,14 @@ pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag 
 
 Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-0.1.9`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，Git Pod 不通过 CocoaPods Specs 分发。Native SPM 与 Pod 二选一；使用 `/Kuikly` subspec 时由其包含 Native，不再额外打包同名 SPM 产品。
 
-HarmonyOS 此版使用 HAR `0.1.7`，精确 Registry 可安装性见顶部发布记录。Registry 审核通过前按 Release SHA 固定下载独立原生包，审核受理不等于已上架：
+HarmonyOS 当前 HAR 候选为 `0.1.8-rc.1`，配套 Maven `0.1.9` / Git Pod `native-0.1.9`。候选按精确 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-0.1.8-rc.1) 的 `WechatNative.har` 和 `har-release-checksums.txt` 冻结 SHA-256 校验后，以文件依赖安装；构建、冻结与公开消费完成前不表示已可用。历史 HAR `0.1.7` 仍归属 [0.1.9 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.9)，不覆盖旧产物。
 
 ```sh
-ohpm install @gycrosskit/wechat-native@0.1.7
+# 仅 Registry 精确版本可查询、可安装后使用；审核受理不等于上架。
+ohpm install @gycrosskit/wechat-native@0.1.8-rc.1
 ```
 
-[此版 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.9) 提供 HAR `0.1.7` 的 `WechatNative.har` 和 SHA-256，供校验及文件依赖使用；不要以旧 0.1.0 替代新增 API。
+受控发布仅使用 `ohpm publish --tag next`，不提升 `latest`。公开 Release HAR 消费与 Registry 安装分别验收，操作入口见[开发与验证](docs/开发与验证.md#har-rc-冻结与公开消费)。
 
 ## 最小接入
 
@@ -225,7 +226,7 @@ Node替身检查覆盖旧namespace、重启/隔离、删除与落盘失败；不
 
 [Release validation](.github/workflows/release-validation.yml) 在 Maven Release 发布或手动填写精确已发布版本时，`verify-public` 统一校验一次冻结归档、精确 tag/commit、完整 publication 清单和公开文件；通过后 Android/Native 独立消费者从 JitPack 解析该版本。PR 不再反复消费旧基线；不使用 `mavenLocal`、本库源码或归档替换远程依赖。此流程不发布二进制。
 
-GitHub-hosted runner 的实际结果以 Actions 为准；没有 DevEco/ohpm runner，因此 HAR 构建、ohpm Registry 安装、完整原生 SDK 集成和真机业务验收仍按既有验证文档执行，不能由这些 job 的成功代算。
+GitHub-hosted runner 的实际结果以 Actions 为准；HAR 构建与精确公开 HAR 消费使用已有 `gycrosskit-wechat-har` Jenkins job 和受控 HarmonyOS CLT，不能由 Maven job 的成功代算。OHPM Registry 安装与真机业务仍分别验收。
 
 阶段、缓存、有限网络重试、失败记录与证据边界见[共用 CI 规则](https://github.com/gycrosskit/.github/blob/main/docs/持续集成门禁.md)；本库实际平台命令以 workflow 为准。源码通过、远程消费、HAR/ohpm 与设备验收分别记录。
 
