@@ -8,7 +8,7 @@
 
 ## 当前功能与平台边界
 
-core 与原生client提供OAuth、图片/网页分享和商家转账确认页；无CMP UI，wechat-kuikly源码提供Android/iOS/OHOS发送端及原生receiver。iOS2.0.7支持指定联系人图片分享，OHOS1.0.23不支持。
+core 与原生client提供OAuth、图片/网页分享和商家转账确认页；不提供业务页面 UI，wechat-kuikly源码提供Android/iOS/OHOS发送端及原生receiver。iOS2.0.7支持指定联系人图片分享，OHOS1.0.23不支持。
 
 2026-10-08 历史基线：Maven 0.1.7；Swift Package / Git Pod native-0.1.6（Pod内部0.1.6）；HAR 0.1.6。该基线修复与平台边界见[功能与平台差异](docs/功能与平台差异.md)，构建与渠道验收见[版本发布记录](https://github.com/gycrosskit/wechat/releases/tag/0.1.7)；下方旧版本记录保留其历史范围。
 
