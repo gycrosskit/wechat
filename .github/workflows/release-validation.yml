@@ -20,7 +20,7 @@ env:
   VERSION: ${{ github.event.release.tag_name || inputs.version }}
 jobs:
   verify-public:
-    if: (github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'native-')) || (github.event_name == 'workflow_dispatch' && inputs.version != '' && !startsWith(inputs.version, 'native-'))
+    if: (github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'native-') && !startsWith(github.event.release.tag_name, 'har-')) || (github.event_name == 'workflow_dispatch' && inputs.version != '' && !startsWith(inputs.version, 'native-') && !startsWith(inputs.version, 'har-'))
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -41,7 +41,7 @@ jobs:
           status: ${{ job.status }}
   release-android:
     needs: verify-public
-    if: always() && ((github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'native-')) || (github.event_name == 'workflow_dispatch' && inputs.version != '' && !startsWith(inputs.version, 'native-')))
+    if: always() && ((github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'native-') && !startsWith(github.event.release.tag_name, 'har-')) || (github.event_name == 'workflow_dispatch' && inputs.version != '' && !startsWith(inputs.version, 'native-') && !startsWith(inputs.version, 'har-')))
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -76,7 +76,7 @@ jobs:
           status: ${{ job.status }}
   release-native:
     needs: verify-public
-    if: always() && ((github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'native-')) || (github.event_name == 'workflow_dispatch' && inputs.version != '' && !startsWith(inputs.version, 'native-')))
+    if: always() && ((github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'native-') && !startsWith(github.event.release.tag_name, 'har-')) || (github.event_name == 'workflow_dispatch' && inputs.version != '' && !startsWith(inputs.version, 'native-') && !startsWith(inputs.version, 'har-')))
     runs-on: macos-15
     timeout-minutes: 60
     steps:

@@ -1,0 +1,3 @@
+# Tag SHA256 SourceCommit
+# Add only the actual Jenkins HAR hash and source-commit.txt after downloading and checking both.
+har-0.1.8-rc.1 7562f1b88bfc88a50dc743a19ee35c2bff4507005ff0b67d4ff414bfc827cfbf c7179142d6c3b41ab116c40a688fef9f20da341f

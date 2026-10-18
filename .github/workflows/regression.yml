@@ -67,6 +67,7 @@ jobs:
           python3 scripts/ci-run.py --log ci-diagnostics/contracts-1.log -- python3 verification/ci/test_fork_host.py
           python3 scripts/ci-run.py --log ci-diagnostics/contracts-2.log -- python3 scripts/test-check-maven.py
           python3 scripts/ci-run.py --log ci-diagnostics/contracts-3.log -- python3 scripts/test-jitpack-metadata.py
+          python3 scripts/ci-run.py --log ci-diagnostics/contracts-har.log -- python3 verification/ci/test_har_release.py
       - name: Check source cache and test execution policy
         if: needs.changes.outputs.source == 'true'
         run: python3 verification/ci/test_cache_contract.py
