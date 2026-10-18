@@ -69,8 +69,14 @@ export class WechatClient implements wx.WXApiEventHandler {
     if (WechatClient.wants.length === 4) { WechatClient.wants.shift(); }
     WechatClient.wants.push(want); return false;
   }
-  /** 只有可信 pending 或已验证缓存回执允许恢复页面 owner。 */
-  canResume(id: string): boolean { return this.pending?.id === id || this.receipts.some((receipt: WechatReceipt) => receipt.requestId === id); }
+  /** 只恢复尚无其他页面持有的可信 pending 或已验证缓存回执。 */
+  canResume(id: string, owner: Listener | null = null): boolean {
+    let owned = false;
+    this.listeners.forEach((registration: ListenerRegistration, listener: Listener) => {
+      if (listener !== owner && registration.ids?.has(id)) { owned = true; }
+    });
+    return !owned && (this.pending?.id === id || this.receipts.some((receipt: WechatReceipt) => receipt.requestId === id));
+  }
   /** UI 线程附着回执监听；ids 为 null 接收全部，否则只交付指定 owner 的 ID。 */
   addListener(listener: Listener, ids: Set<string> | null = null): void {
     const registration: ListenerRegistration = { ids };
@@ -190,7 +196,7 @@ export class WechatClient implements wx.WXApiEventHandler {
       const message = new wx.WXMediaMessage(); message.mediaObject = object; message.title = this.text(title, 256, 512); message.description = this.text(description, 512, 1024); message.thumbData = thumb;
       return this.sendShare(message, scene, pending);
     } catch (_) { return this.fail(pending, 'invalid_content'); }
-    finally { if (source) { await source.release(); } }
+    finally { if (source) { try { await source.release(); } catch (_) {} } }
   }
   /** 打开商家确认页，packageValue 来自可信后端并原样编码；回执不证明到账。 */
   async openMerchantTransfer(id: string, merchantId: string, appId: string, packageValue: string): Promise<WechatStatus> {

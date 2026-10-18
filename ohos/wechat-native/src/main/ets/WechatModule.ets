@@ -8,6 +8,7 @@ export class WechatModule extends KuiklyRenderBaseModule {
   private listener: KuiklyRenderCallback | null = null;
   private destroyed: boolean = false;
   private ids: Set<string> = new Set();
+  private submitting: Map<string, Args> = new Map();
   private response = (receipt: WechatReceipt): void => { if (!this.destroyed && this.ids.delete(receipt.requestId)) { this.listener?.(receipt); } };
   syncMode(): boolean { return false; }
   /** 页面线程异步入口；listen 只恢复可信 ID，cancel 清除失败保留原 owner。 */
@@ -17,7 +18,7 @@ export class WechatModule extends KuiklyRenderBaseModule {
     if (method === 'listen') {
       let restored = '';
       try { restored = (JSON.parse(typeof params === 'string' ? params : '{}') as Args).restoredRequestId; } catch (_) {}
-      if (typeof restored === 'string' && client.canResume(restored)) { this.ids.add(restored); }
+      if (typeof restored === 'string' && client.canResume(restored, this.response)) { this.ids.add(restored); }
       this.listener = callback; client.addListener(this.response, this.ids); return null;
     }
     if (method === 'unlisten') { this.release(); return null; }
@@ -29,6 +30,7 @@ export class WechatModule extends KuiklyRenderBaseModule {
       try {
         const cancelled = client.cancel(args.requestId);
         this.ids.delete(args.requestId);
+        this.submitting.delete(args.requestId);
         callback?.({ status: cancelled ? 'cancelled' : 'no_pending' });
       } catch (_) {
         // 清除持久记录失败时保留 owner；迟回执和下一次取消仍属于同一请求。
@@ -36,17 +38,22 @@ export class WechatModule extends KuiklyRenderBaseModule {
       }
       return null;
     }
-    if (this.ids.has(args.requestId)) { callback?.({ status: 'busy' }); return null; }
+    if (this.ids.has(args.requestId) || this.submitting.has(args.requestId)) { callback?.({ status: 'busy' }); return null; }
     this.ids.add(args.requestId);
+    // 每次解析得到的参数对象是独有 token，取消后同 ID 重入不能被旧 Promise 消费。
+    this.submitting.set(args.requestId, args);
     this.perform(client, method, args).then((status: WechatStatus) => {
-      if (!this.ids.has(args.requestId)) { return; }
+      // 回执可以先到并释放接收归属；提交结果有独立生命周期。
+      if (this.submitting.get(args.requestId) !== args) { return; }
+      this.submitting.delete(args.requestId);
       if (status !== 'requested' || method === 'image') { this.ids.delete(args.requestId); }
       if (!this.destroyed) { callback?.({ status }); }
     }).catch(() => {
-      if (!this.ids.has(args.requestId)) { return; }
-      const pending = client.canResume(args.requestId);
+      if (this.submitting.get(args.requestId) !== args) { return; }
+      this.submitting.delete(args.requestId);
+      const pending = client.canResume(args.requestId, this.response);
       if (!pending) { this.ids.delete(args.requestId); }
-      // SDK 发送后的资源释放也可能抛错；可信 pending 仍在时不能伪造提交终态。
+      // 可信 pending 仍在时不能伪造提交终态。
       if (!this.destroyed) { callback?.({ status: pending ? 'pending' : 'failed' }); }
     });
     return null;
@@ -60,9 +67,11 @@ export class WechatModule extends KuiklyRenderBaseModule {
   }
   private release(): void {
     const client = WechatClient.current();
-    const ids = Array.from(this.ids); this.ids.clear();
-    client?.removeListener(this.response); this.listener = null;
-    ids.forEach((id: string) => client?.cancel(id));
+    const ids = Array.from(this.ids);
+    this.listener = null; this.submitting.clear();
+    // 清除日志期间保留归属，避免重入页面抢走后被旧 owner 取消。
+    try { ids.forEach((id: string) => client?.cancel(id)); }
+    finally { this.ids.clear(); client?.removeListener(this.response); }
   }
   onDestroy(): void {
     this.destroyed = true;
