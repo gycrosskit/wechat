@@ -200,7 +200,7 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  cancelPage.call('authorize', JSON.stringify({ requestId: 'cancel-fails-late-receipt' }), value => submissions.push(value.status)); await flush();
  const cancelReq = sent.at(-1); assert.equal(submissions.at(-1), 'requested');
  failClear = true; callCancel('cancel-fails-late-receipt'); assert.equal(cancelAcks.at(-1), 'failed');
- assert.equal(cancelSaved.requestId, 'cancel-fails-late-receipt'); assert.equal(cancelClient.canResume('cancel-fails-late-receipt'), true);
+ assert.equal(cancelSaved.requestId, 'cancel-fails-late-receipt'); assert.equal(cancelClient.canResume('cancel-fails-late-receipt'), false, 'active owner cannot be restored by another page');
  callCancel('unknown'); assert.equal(cancelAcks.at(-1), 'no_pending');
  const foreignPage = new cancelModule.exports.WechatModule(); foreignPage.call('listen', '{}', () => assert.fail('foreign receipt'));
  foreignPage.call('cancel', JSON.stringify({ requestId: 'cancel-fails-late-receipt' }), value => assert.equal(value.status, 'no_pending'));
@@ -242,6 +242,74 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  assert.equal(cancelReceipts.length, 1, 'destroyed owner cannot receive the restored receipt');
  restoredPage.onDestroy(); foreignPage.onDestroy();
  console.log('Real OHOS cancel bridge: failed clear retains owner, late receipt, unknown/foreign/completed ID, retry and late submission ack passed');
+
+ // 独立CMP退出复核：受理与回执分离、活动页面归属、释放异常不改写SDK受理结果。
+ const RegressionClient = fresh(); let regressionSaved = null, duringClear;
+ const regressionClient = RegressionClient.configure('host-app-id', { cacheDir: '/tmp' }, {
+   load: () => regressionSaved,
+   save: value => { if (!value) duringClear?.(); regressionSaved = value ? { ...value } : null; }
+ });
+ const regressionModule = { exports: {} };
+ vm.runInNewContext(moduleOutput, { exports: regressionModule.exports, require: key => key === './WechatClient' ? { WechatClient: RegressionClient } : render, Set });
+ const makePage = () => new regressionModule.exports.WechatModule();
+ const owner = makePage(), ownerReceipts = [];
+ owner.call('listen', '{}', value => ownerReceipts.push(value));
+ const scenarios = [
+   ['authorize', {}, wx.SendAuthResp, req => ({ state: req.state, code: 'fixture-code' })],
+   ['webpage', { url: 'https://example.com', title: '', description: '', thumbnail: 'aA==', scene: 'session' }, wx.SendMessageToWXResp, () => ({})],
+   ['transfer', { merchantId: 'merchant', appId: 'app', packageValue: 'package' }, wx.OpenBusinessViewResp, () => ({ businessType: 'requestMerchantTransfer' })]
+ ];
+ for (const [method, args, Type, extra] of scenarios) {
+   accepted = 'delay'; const id = 'early-receipt-' + method, submitted = [];
+   owner.call(method, JSON.stringify({ ...args, requestId: id }), value => submitted.push(value.status));
+   await new Promise(resolve => setImmediate(resolve));
+   const req = sent.at(-1), ack = pendingSend, before = ownerReceipts.length;
+   regressionClient.onResp(response(Type, req, extra(req)));
+   assert.equal(ownerReceipts.length, before + 1); assert.deepEqual(submitted, []);
+   owner.call(method, JSON.stringify({ ...args, requestId: id }), value => assert.equal(value.status, 'busy'));
+   ack(true); await flush(); assert.deepEqual(submitted, ['requested'], method + ' must keep submit ack after early receipt');
+   regressionClient.onResp(response(Type, req, extra(req))); assert.equal(ownerReceipts.length, before + 1);
+ }
+ accepted = true;
+ owner.call('authorize', JSON.stringify({ requestId: 'active-owner' }), () => {}); await flush();
+ const activeReq = sent.at(-1), intruder = makePage(), intruderReceipts = [];
+ intruder.call('listen', JSON.stringify({ restoredRequestId: 'active-owner' }), value => intruderReceipts.push(value));
+ intruder.call('cancel', JSON.stringify({ requestId: 'active-owner' }), value => assert.equal(value.status, 'no_pending'));
+ assert.equal(regressionSaved.requestId, 'active-owner');
+ const beforeActive = ownerReceipts.length;
+ regressionClient.onResp(response(wx.SendAuthResp, activeReq, { state: activeReq.state, code: 'owned' }));
+ assert.equal(ownerReceipts.length, beforeActive + 1); assert.deepEqual(intruderReceipts, []);
+ owner.call('authorize', JSON.stringify({ requestId: 'release-reservation' }), () => {}); await flush();
+ duringClear = () => assert.equal(regressionClient.canResume('release-reservation'), false, 'release must reserve owner through journal cleanup');
+ owner.onDestroy(); duringClear = undefined; assert.equal(regressionSaved, null); intruder.onDestroy();
+ failSourceRelease = true;
+ assert.equal(await regressionClient.shareWebPage('raw-web-release-failure', 'https://example.com', '', '', 'aA==', 'session'), 'requested');
+ const rawReleaseReq = sent.at(-1);
+ regressionClient.onResp(response(wx.SendMessageToWXResp, rawReleaseReq));
+ const releasePage = makePage(), releaseReceipts = [], releaseStatuses = [];
+ releasePage.call('listen', '{}', value => releaseReceipts.push(value));
+ releasePage.call('webpage', JSON.stringify({ requestId: 'module-web-release-failure', url: 'https://example.com', title: '', description: '', thumbnail: 'aA==', scene: 'session' }), value => releaseStatuses.push(value.status));
+ await new Promise(resolve => setImmediate(resolve)); failSourceRelease = false;
+ assert.deepEqual(releaseStatuses, ['requested']);
+ const moduleReleaseReq = sent.at(-1);
+ regressionClient.onResp(response(wx.SendMessageToWXResp, moduleReleaseReq)); assert.equal(releaseReceipts.length, 1);
+ assert.equal(regressionSaved, null); releasePage.onDestroy();
+ for (const ticks of [3, 4, 5]) {
+   const abaPage = makePage(), id = 'cancel-reentry-' + ticks, oldStatuses = [], newStatuses = [];
+   abaPage.call('listen', '{}', () => {});
+   accepted = 'delay';
+   abaPage.call('authorize', JSON.stringify({ requestId: id }), value => oldStatuses.push(value.status));
+   await flush(); const ack = pendingSend;
+   ack(true);
+   for (let tick = 0; tick < ticks; tick++) await Promise.resolve();
+   abaPage.call('cancel', JSON.stringify({ requestId: id }), value => assert.equal(value.status, 'cancelled'));
+   abaPage.call('authorize', JSON.stringify({ requestId: id }), value => newStatuses.push(value.status));
+   await flush();
+   assert.deepEqual(oldStatuses, [], 'cancelled submit must stay silent after ' + ticks + ' microtasks');
+   assert.deepEqual(newStatuses, ['invalid_content'], 'reused ID must receive its own rejection after ' + ticks + ' microtasks');
+   abaPage.onDestroy(); accepted = true;
+ }
+ console.log('Expanded SDK regressions: 10 scenarios passed (3 early receipts, active owner, release reservation, raw/module webpage cleanup failure, 3 cancel/reentry timings)');
 
  // 回放中撤销/替换注册必须保留未消费项，包括同一函数的重注册和ID过滤。
  for (const mode of ['remove', 'replace', 'same-listener']) {
