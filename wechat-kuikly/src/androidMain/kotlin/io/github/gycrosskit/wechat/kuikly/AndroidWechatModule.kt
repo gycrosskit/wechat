@@ -34,6 +34,7 @@ class AndroidWechatModule(private val client: AndroidWechatClient) : KuiklyRende
             }
             if (method == "unlisten") { release(); return@onMain }
             if (listener == null) { callback?.invoke(status("unsupported")); return@onMain }
+            ids.removeAll { it !in submissions && !client.hasPendingRequest(it) }
             val id = args.opt("requestId") as? String
             if (id.isNullOrBlank() || id.length > 128) { callback?.invoke(status("invalid_content")); return@onMain }
             if (method == "cancel") {

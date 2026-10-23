@@ -1,3 +1,4 @@
 # Tag SHA256 SourceCommit
-# Add only the actual Jenkins HAR hash and source-commit.txt after downloading and checking both.
+# Add only a validated frozen HAR hash and its source-commit.txt; never overwrite a published entry.
 har-0.1.8-rc.1 7562f1b88bfc88a50dc743a19ee35c2bff4507005ff0b67d4ff414bfc827cfbf c7179142d6c3b41ab116c40a688fef9f20da341f
+har-0.1.9-rc.1 6820d2584376eb911f3e6d13648fbbe428ecb0de99a1f1b01870116d550385bd 00e0722585297b9b692f82cb34ad6265e6b7b000

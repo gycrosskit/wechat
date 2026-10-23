@@ -1,6 +1,50 @@
 package io.github.gycrosskit.wechat
 import kotlin.test.*
 class WechatSessionTest {
+    @Test fun acceptedTransfersKeepReceiptsWithoutBlockingNewRequests() {
+        val session = WechatSession()
+        assertNull(session.begin("transfer-one", "tx-one", WechatKind.MERCHANT_TRANSFER))
+        assertEquals(WechatStatus.BUSY, session.begin("during-send", "tx-sending", WechatKind.MERCHANT_TRANSFER))
+        assertTrue(session.finishSubmission("transfer-one"))
+        assertNull(session.begin("transfer-two", "tx-two", WechatKind.MERCHANT_TRANSFER))
+        assertTrue(session.finishSubmission("transfer-two"))
+        assertNull(session.begin("auth", "tx-auth", WechatKind.AUTHORIZATION, "state"))
+        assertEquals("transfer-one", session.consume("tx-one", WechatKind.MERCHANT_TRANSFER)?.requestId)
+        assertTrue(session.isCurrent("auth"))
+        assertTrue(session.cancel("transfer-two"))
+        assertTrue(session.isCurrent("auth"))
+        assertNull(session.consume("tx-two", WechatKind.MERCHANT_TRANSFER))
+        assertEquals("auth", session.consume("tx-auth", WechatKind.AUTHORIZATION, "state")?.requestId)
+    }
+    @Test fun oldTransfersCannotClearNewTransferStillSubmitting() {
+        val session = WechatSession()
+        for (id in listOf("one", "two")) {
+            assertNull(session.begin(id, "tx-$id", WechatKind.MERCHANT_TRANSFER))
+            assertTrue(session.finishSubmission(id))
+        }
+        assertNull(session.begin("new", "tx-new", WechatKind.MERCHANT_TRANSFER))
+        assertEquals("one", session.consume("tx-one", WechatKind.MERCHANT_TRANSFER)?.requestId)
+        assertTrue(session.cancel("two"))
+        assertTrue(session.isCurrent("new"))
+        assertEquals(WechatStatus.BUSY, session.begin("overlap", "tx-overlap", WechatKind.MERCHANT_TRANSFER))
+        assertTrue(session.finishSubmission("new"))
+    }
+    @Test fun acceptedTransferKeepsTrustedPendingWhenStoreClearFails() {
+        var failClear = true
+        val session = WechatSession(object : WechatRequestStore {
+            override fun load(): WechatPendingRequest? = null
+            override fun save(request: WechatPendingRequest?) {
+                if (request == null && failClear) error("clear failed")
+            }
+        })
+        assertNull(session.begin("accepted", "tx-accepted", WechatKind.MERCHANT_TRANSFER))
+        assertFalse(session.finishSubmission("accepted"))
+        assertTrue(session.isCurrent("accepted"))
+        assertEquals(WechatStatus.BUSY, session.begin("next", "tx-next", WechatKind.AUTHORIZATION, "state"))
+        failClear = false
+        assertTrue(session.finishSubmission("accepted"))
+        assertNull(session.begin("after-clear", "tx-after-clear", WechatKind.AUTHORIZATION, "state"))
+    }
     @Test fun imageSubmissionDoesNotPersistOrWaitForFinalReceipt() {
         val saved = mutableListOf<WechatPendingRequest?>()
         val session = WechatSession(object : WechatRequestStore {

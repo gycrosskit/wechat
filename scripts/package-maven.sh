@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION=$(python3 -c 'import re,pathlib; print(re.search(r"orElse\(\"([0-9]+\.[0-9]+\.[0-9]+)\"\)", pathlib.Path("build.gradle.kts").read_text())[1])')
+VERSION=$(python3 -c 'import re,pathlib; print(re.search(r"orElse\(\"([0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[1-9][0-9]*)?)\"\)", pathlib.Path("build.gradle.kts").read_text())[1])')
 export VERSION
 test ! -e build/release-candidate
 test ! -e "build/maven/com/github/gycrosskit/wechat/wechat-core/$VERSION"

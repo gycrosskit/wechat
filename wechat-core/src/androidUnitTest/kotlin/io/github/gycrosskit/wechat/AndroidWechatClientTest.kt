@@ -111,13 +111,56 @@ class AndroidWechatClientTest {
         background { assertFailsWith<IllegalStateException> { client.handleIntent(Intent()) } }
     }
 
+    @Test fun repeatedModuleTransfersBoundOldOwnersWithoutBlocking() {
+        client.handleIntent(Intent())
+        val module = AndroidWechatModule(client)
+        val submitted = mutableListOf<String>()
+        val receipts = mutableListOf<String>()
+        module.call("listen", "{}") { receipts += it as String }
+        repeat(66) { index ->
+            val params = JSONObject().put("requestId", "retry-$index").put("merchantId", "merchant")
+                .put("appId", "app").put("packageValue", "package")
+            module.call("transfer", params.toString()) { submitted += JSONObject(it as String).getString("status") }
+        }
+        assertEquals(66, submitted.size)
+        assertTrue(submitted.all { it == "requested" })
+        assertFalse(client.hasModuleOwner("retry-0"))
+        assertTrue(client.hasModuleOwner("retry-65"))
+        WechatFactoryShadow.respond(WXOpenBusinessView.Resp().apply {
+            transaction = WechatFactoryShadow.sent.first().transaction; businessType = "requestMerchantTransfer"
+        })
+        assertTrue(receipts.isEmpty())
+        module.onDestroy()
+        assertFalse(client.hasPendingRequest("retry-65"))
+    }
+
+    @Test fun transfersWithoutReceiptsDoNotBlockOrStealNewAuthorization() {
+        client.handleIntent(Intent())
+        client.openMerchantTransfer("first", "merchant", "app-id", "package")
+        val first = WechatFactoryShadow.sent.last()
+        client.openMerchantTransfer("second", "merchant", "app-id", "package")
+        assertEquals(listOf("first" to WechatStatus.REQUESTED, "second" to WechatStatus.REQUESTED), listener.submitted)
+        assertNull(store.saved)
+        client.authorize("next-auth")
+        assertEquals("next-auth" to WechatStatus.REQUESTED, listener.submitted.last())
+        WechatFactoryShadow.respond(WXOpenBusinessView.Resp().apply {
+            transaction = first.transaction; businessType = "requestMerchantTransfer"; extMsg = "{}"
+        })
+        assertEquals("first", listener.receipts.single().requestId)
+        assertEquals("next-auth", store.saved?.requestId)
+        client.cancel("second")
+        assertEquals("second" to WechatStatus.CANCELLED, listener.submitted.last())
+        assertTrue(client.hasPendingRequest("next-auth"))
+        assertEquals("next-auth", store.saved?.requestId)
+    }
+
     @Test fun backgroundTransferAndCancelAreSerialized() {
         background { client.openMerchantTransfer("transfer", "merchant", "app-id", "package") }
         idle()
         assertTrue(WechatFactoryShadow.sent.single() is WXOpenBusinessView.Req)
         assertEquals(listOf("transfer" to WechatStatus.REQUESTED), listener.submitted)
         background { client.cancel("transfer") }
-        assertNotNull(store.saved)
+        assertNull(store.saved, "已受理转账不再持久占用发送槽")
         idle()
         assertNull(store.saved)
         assertEquals("transfer" to WechatStatus.CANCELLED, listener.submitted.last())

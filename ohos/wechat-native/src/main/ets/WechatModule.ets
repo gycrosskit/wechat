@@ -22,6 +22,9 @@ export class WechatModule extends KuiklyRenderBaseModule {
       this.listener = callback; client.addListener(this.response, this.ids); return null;
     }
     if (method === 'unlisten') { this.release(); return null; }
+    this.ids.forEach((id: string) => {
+      if (!this.submitting.has(id) && !client.canResume(id, this.response)) this.ids.delete(id);
+    });
     let args: Args;
     try { args = JSON.parse(typeof params === 'string' ? params : '{}') as Args; } catch (_) { callback?.({ status: 'invalid_content' }); return null; }
     if (!args || typeof args.requestId !== 'string') { callback?.({ status: 'invalid_content' }); return null; }

@@ -2,11 +2,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require(process.env.TYPESCRIPT_PATH || '/Applications/DevEco-Studio.app/Contents/tools/hvigor/hvigor/node_modules/typescript');
+const sentContexts = [], factoryContexts = [];
 let seq = 0, installed = true, accepted = true, pendingSend, packingGate, failSourceRelease = false, sent = [], files = new Set(), removed = 0, released = 0, writes = 0;
 class Base { checkArgs() { return true; } }
 class Auth extends Base {} class Share extends Base {} class Transfer extends Base {}
 const wx = { BaseReq: Base, SendAuthReq: Auth, SendAuthResp: class {}, SendMessageToWXReq: Share, SendMessageToWXResp: class {}, OpenBusinessViewReq: Transfer, OpenBusinessViewResp: class {}, WXImageObject: class {}, WXWebpageObject: class {}, WXMediaMessage: class {}, Log: { setLogImpl() {} },
-WXAPIFactory: { createWXAPI: () => ({ setPayReportEnabled() {}, handleWant: (want, handler) => { if (!want.verified) return false; handler.onResp(want.response); return true; }, isWXAppInstalled: () => installed, sendReq: async (_ctx, req) => { sent.push(req); if (accepted === 'delay') return new Promise(resolve => { pendingSend = resolve; }); return accepted; } }) } };
+WXAPIFactory: { createWXAPI: (_appId, context) => (factoryContexts.push(context), ({ setPayReportEnabled() {}, handleWant: (want, handler) => { if (!want.verified) return false; handler.onResp(want.response); return true; }, isWXAppInstalled: () => installed, sendReq: async (_ctx, req) => { sentContexts.push(_ctx); sent.push(req); if (accepted === 'delay') return new Promise(resolve => { pendingSend = resolve; }); return accepted; } })) } };
 Share.WXSceneTimeline = 1; Share.WXSceneSession = 0;
 const sdk = {
  '@tencent/wechat_open_sdk': wx, '@kit.AbilityKit': {},
@@ -174,11 +175,14 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  const Fourth = fresh(); const fourth = Fourth.configure('host-app-id', { cacheDir: '/tmp' }, store); const cancelled = [];
  fourth.addListener(r => cancelled.push(r)); fourth.handleWant({ verified: true, response: response(wx.SendAuthResp, typeReq, { state: typeReq.state, code: 'late' }) }); assert.equal(cancelled.length, 0);
  assert.equal(await fourth.openMerchantTransfer('cold-transfer', 'merchant', 'app', 'package'), 'requested'); const coldTransfer = sent.at(-1);
+ assert.equal(saved, null, '已受理转账不再持久占用发送槽');
+ fourth.handleWant({ verified: true, response: response(wx.OpenBusinessViewResp, coldTransfer, { businessType: 'wrong', extMsg: '{"result":"success"}' }) }); assert.equal(cancelled.length, 0);
+ fourth.handleWant({ verified: true, response: response(wx.OpenBusinessViewResp, coldTransfer, { businessType: 'requestMerchantTransfer', extMsg: '{"result":"success"}' }) });
+ assert.equal(cancelled.length, 1); assert.equal(cancelled[0].requestId, 'cold-transfer'); assert.equal(cancelled[0].pageResult, 'success'); assert(!('paid' in cancelled[0]));
  const Fifth = fresh(); const fifth = Fifth.configure('host-app-id', { cacheDir: '/tmp' }, store);
- fifth.handleWant({ verified: true, response: response(wx.OpenBusinessViewResp, coldTransfer, { businessType: 'wrong', extMsg: '{"result":"success"}' }) }); assert(saved);
  fifth.handleWant({ verified: true, response: response(wx.OpenBusinessViewResp, coldTransfer, { businessType: 'requestMerchantTransfer', extMsg: '{"result":"success"}' }) });
- const transferReceipts = []; const transferListener = r => transferReceipts.push(r); fifth.addListener(transferListener); assert.equal(transferReceipts.length, 1); assert.equal(transferReceipts[0].pageResult, 'success'); assert(!('paid' in transferReceipts[0]));
- fifth.removeListener(transferListener);
+ const transferReceipts = []; const transferListener = r => transferReceipts.push(r); fifth.addListener(transferListener);
+ assert.equal(transferReceipts.length, 0, '跨进程旧转账回执不能创建新的可信归属'); fifth.removeListener(transferListener);
  assert.equal(await fifth.authorize('buffer-cancel'), 'requested'); const bufferedReq = sent.at(-1);
  fifth.handleWant({ verified: true, response: response(wx.SendAuthResp, bufferedReq, { state: bufferedReq.state, code: 'code' }) });
  fifth.cancel('buffer-cancel'); const cancelledBuffer = []; fifth.addListener(r => cancelledBuffer.push(r)); assert.equal(cancelledBuffer.length, 0);
@@ -366,6 +370,66 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  assert.equal(boundary.canResume(boundarySaved.requestId), true);
  console.log('OHOS replay revoke/replace/re-register retains remaining filtered receipts once; UTF16 ID boundaries passed');
  console.log('OHOS cold process, SDK verification, trusted journal, late Kuikly listener, cancellation and replay checks passed');
+ const Context = fresh();
+ const mainContext = { cacheDir: '/cache-main' }, liveContext = { cacheDir: '/cache-live' };
+ const beforeFactories = factoryContexts.length;
+ const scoped = Context.configure('host-app-id', mainContext);
+ assert.equal(Context.configure('host-app-id', liveContext), scoped);
+ assert.equal(factoryContexts.length, beforeFactories + 1, '多 Ability 共用唯一 SDK');
+ assert.equal(await scoped.openMerchantTransfer('context-transfer', 'merchant', 'app', 'package'), 'requested');
+ assert.equal(sentContexts.at(-1), liveContext, '直播领取必须使用本次配置的 Audience context');
+ scoped.cancel('context-transfer');
+ let finishPacking;
+ packingGate = new Promise(resolve => { finishPacking = resolve; });
+ const inFlightImage = scoped.shareImage('context-image', 'aGVsbG8=', 'session');
+ await flush();
+ Context.configure('host-app-id', mainContext);
+ finishPacking(); packingGate = null;
+ assert.equal(await inFlightImage, 'requested');
+ assert.equal(sentContexts.at(-1), liveContext, '图片异步准备期间切换 owner 不改变已开始请求');
+ const contextImage = sent.at(-1);
+ assert(contextImage.message.mediaObject.uri.startsWith('/cache-live/'));
+ scoped.onResp(response(wx.SendMessageToWXResp, contextImage)); await flush();
+ assert.equal(await scoped.authorize('context-next-auth'), 'requested');
+ assert.equal(sentContexts.at(-1), mainContext, '后继请求使用最新调用方 context');
+ scoped.cancel('context-next-auth');
+ const Slots = fresh(), slots = Slots.configure('host-app-id', mainContext), slotReceipts = [];
+ slots.addListener(value => slotReceipts.push(value));
+ const transferRequests = [];
+ for (let index = 0; index < 2; index++) {
+   assert.equal(await slots.openMerchantTransfer(`retry-transfer-${index}`, 'merchant', 'app', 'package'), 'requested');
+   transferRequests.push(sent.at(-1));
+ }
+ assert.equal(await slots.authorize('after-transfers-auth'), 'requested');
+ const stillActiveAuth = sent.at(-1);
+ slots.onResp(response(wx.OpenBusinessViewResp, transferRequests[0], { businessType: 'requestMerchantTransfer', extMsg: '{"result":"success"}' }));
+ assert.equal(slotReceipts.at(-1).requestId, 'retry-transfer-0');
+ assert.equal(slots.canResume('after-transfers-auth'), true, '旧转账回执不能清除新授权');
+ assert.equal(slots.cancel('retry-transfer-1'), true);
+ slots.onResp(response(wx.OpenBusinessViewResp, transferRequests[1], { businessType: 'requestMerchantTransfer' }));
+ assert.equal(slotReceipts.length, 1, '取消后的转账回执不能归给后继请求');
+ assert.equal(slots.canResume('after-transfers-auth'), true);
+ slots.onResp(response(wx.SendAuthResp, stillActiveAuth, { state: stillActiveAuth.state, code: 'synthetic-code' }));
+ assert.equal(slotReceipts.at(-1).requestId, 'after-transfers-auth');
+ const ClearFailure = fresh(); let clearFails = true;
+ const clearFailure = ClearFailure.configure('host-app-id', mainContext, { load: () => null, save: value => { if (value === null && clearFails) throw Error('disk clear failed'); } });
+ assert.equal(await clearFailure.openMerchantTransfer('accepted-clear-failure', 'merchant', 'app', 'package'), 'requested');
+ assert.equal(await clearFailure.authorize('blocked-unsafe-journal'), 'busy');
+ clearFails = false; assert.equal(clearFailure.cancel('accepted-clear-failure'), true);
+ const slotModuleExports = { exports: {} };
+ vm.runInNewContext(moduleOutput, { exports: slotModuleExports.exports, require: key => key === './WechatClient' ? { WechatClient: Slots } : render, Set });
+ const slotPage = new slotModuleExports.exports.WechatModule(), moduleSubmissions = [];
+ slotPage.call('listen', '{}', () => {});
+ for (let index = 0; index < 66; index++) {
+   slotPage.call('transfer', JSON.stringify({ requestId: `module-retry-${index}`, merchantId: 'merchant', appId: 'app', packageValue: 'package' }), value => moduleSubmissions.push(value.status));
+   await flush();
+ }
+ assert.equal(moduleSubmissions.length, 66); assert(moduleSubmissions.every(value => value === 'requested'));
+ assert(slotPage.ids.size <= 65, '无回执连续操作不能无限累积 Renderer 归属');
+ assert.equal(slots.transfers.size, 64, '只保留有界且不阻塞发送的回执关联');
+ slotPage.onDestroy(); assert.equal(slots.transfers.size, 0);
+ console.log('OHOS transfer repeat launch without receipt, exact late/cancelled receipt attribution and failed journal clear passed');
+ console.log('OHOS request context: singleton SDK, current Ability, async image owner snapshot passed');
  console.log('OHOS image repeat submission, no journal/resume/business receipt, busy until SDK ack, early/late receipt isolation and in-flight file retention passed');
  console.log('OHOS OAuth state, transaction, duplicate/late callbacks, concurrency, raw transfer encoding, URL validation and temporary file lifecycle passed');
 })().catch(e => { console.error(e); process.exitCode = 1; });
