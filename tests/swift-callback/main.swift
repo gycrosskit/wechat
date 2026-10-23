@@ -261,3 +261,16 @@ check(WXApi.sent.count == 2 && earlyReceipts.last?.attribution == .unattributed,
 earlyClient.shareImage(requestID: "early-image-overlap", data: Data([1]), scene: .session)
 check(earlyStatuses.last?.1 == "busy" && WXApi.sent.count == 2, "early image receipt cannot release current SDK submission")
 print("PASS: early webpage receipt keeps singlePending evidence and sending exclusion")
+
+WXApi.reset(); WXApi.autoAck = false
+var transferStatuses = [(String, String)]()
+let repeatTransferClient = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx",
+    onSubmitted: { transferStatuses.append(($0, $1)) })
+for index in 1...2 {
+    let id = "repeat-transfer-\(index)"
+    repeatTransferClient.openMerchantTransfer(requestID: id, merchantID: "merchant", appID: "app", packageValue: "package")
+    check(WXApi.sent.count == index && WXApi.sent.last is WXOpenBusinessViewReq, "transfer without final receipt can submit again")
+    WXApi.sendCompletions.last!(true); drainSendAck()
+    check(transferStatuses.last?.0 == id && transferStatuses.last?.1 == "requested", "transfer releases sending exclusion at SDK ack")
+}
+print("PASS: Swift repeated transfer without final receipt preserves current non-blocking submission contract")

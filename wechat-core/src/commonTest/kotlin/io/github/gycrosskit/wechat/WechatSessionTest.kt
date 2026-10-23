@@ -1,6 +1,21 @@
 package io.github.gycrosskit.wechat
 import kotlin.test.*
 class WechatSessionTest {
+    @Test fun acceptedTransfersKeepReceiptsWithoutBlockingNewRequests() {
+        val session = WechatSession()
+        assertNull(session.begin("transfer-one", "tx-one", WechatKind.MERCHANT_TRANSFER))
+        assertEquals(WechatStatus.BUSY, session.begin("during-send", "tx-sending", WechatKind.MERCHANT_TRANSFER))
+        assertTrue(session.finishSubmission("transfer-one"))
+        assertNull(session.begin("transfer-two", "tx-two", WechatKind.MERCHANT_TRANSFER))
+        assertTrue(session.finishSubmission("transfer-two"))
+        assertNull(session.begin("auth", "tx-auth", WechatKind.AUTHORIZATION, "state"))
+        assertEquals("transfer-one", session.consume("tx-one", WechatKind.MERCHANT_TRANSFER)?.requestId)
+        assertTrue(session.isCurrent("auth"))
+        assertTrue(session.cancel("transfer-two"))
+        assertTrue(session.isCurrent("auth"))
+        assertNull(session.consume("tx-two", WechatKind.MERCHANT_TRANSFER))
+        assertEquals("auth", session.consume("tx-auth", WechatKind.AUTHORIZATION, "state")?.requestId)
+    }
     @Test fun imageSubmissionDoesNotPersistOrWaitForFinalReceipt() {
         val saved = mutableListOf<WechatPendingRequest?>()
         val session = WechatSession(object : WechatRequestStore {
