@@ -274,3 +274,32 @@ for index in 1...2 {
     check(transferStatuses.last?.0 == id && transferStatuses.last?.1 == "requested", "transfer releases sending exclusion at SDK ack")
 }
 print("PASS: Swift repeated transfer without final receipt preserves current non-blocking submission contract")
+
+WXApi.reset(); WXApi.autoAck = false
+var webpageStatuses = [(String, String)](), webpageReceipts = [WechatReceipt]()
+let webpageClient = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx",
+    onSubmitted: { webpageStatuses.append(($0, $1)) }, onReceipt: { webpageReceipts.append($0) })
+webpageClient.shareWebPage(requestID: "web-one", url: "https://example.com", title: "title", description: "", thumbnail: Data([1]), scene: .session)
+WXApi.sendCompletions.last!(true); drainSendAck()
+check(webpageClient.hasPendingRequest(requestID: "web-one"), "first accepted webpage retains its single candidate")
+webpageClient.authorize(requestID: "auth-with-web")
+check(WXApi.sent.last is SendAuthReq, "accepted webpage does not block new auth")
+WXApi.sendCompletions.last!(true); drainSendAck()
+webpageClient.onResp(SendMessageToWXResp())
+check(webpageReceipts.last?.candidateRequestID == "web-one" && webpageReceipts.last?.attribution == .singlePending, "auth does not replace share attribution")
+check(webpageClient.hasPendingRequest(requestID: "auth-with-web"), "old share receipt does not clear new auth")
+check(webpageClient.cancelWithResult(requestID: "auth-with-web"), "auth can be canceled independently")
+for index in 0..<66 {
+    let id = "no-receipt-web-\(index)"
+    webpageClient.shareWebPage(requestID: id, url: "https://example.com", title: "title", description: "", thumbnail: Data([1]), scene: .session)
+    check(webpageStatuses.last?.1 != "busy", "webpage retries do not wait for final receipts")
+    WXApi.sendCompletions.last!(true); drainSendAck()
+    check(webpageStatuses.last?.0 == id && webpageStatuses.last?.1 == "requested", "each webpage is submitted")
+}
+check(!webpageClient.canCorrelateShareReceipt, "overlapping share receipts cannot be associated without SDK transaction")
+webpageClient.authorize(requestID: "new-auth-after-web")
+webpageClient.onResp(SendMessageToWXResp())
+check(webpageReceipts.last?.attribution == .unattributed && webpageReceipts.last?.candidateRequestID == nil, "old share cannot complete a new webpage task")
+check(!webpageClient.cancelWithResult(requestID: "no-receipt-web-0") && webpageClient.hasPendingRequest(requestID: "new-auth-after-web"), "old webpage cancel cannot clear new auth send")
+WXApi.sendCompletions.last!(true); drainSendAck()
+print("PASS: accepted webpage releases send exclusion, repeated retries and auth work; old share receipts/cancel stay isolated")

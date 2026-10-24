@@ -1,3 +1,4 @@
+import UIKit
 import Foundation
 import OpenKuiklyIOSRender
 let native = WechatClient()
@@ -97,6 +98,18 @@ native.emitSubmitted("tracked-web", "requested")
 precondition(native.hasModuleOwner(requestID: "tracked-web"))
 native.emit(WechatReceipt(requestID: nil, candidateRequestID: "tracked-web", kind: .share, errorCode: 0, attribution: .singlePending))
 precondition(!native.hasModuleOwner(requestID: "tracked-web") && shareReceipts.count == 1)
+// Native 已结束旧候选，receiver 下次调用须清除旧 owner；取消旧 ID 不能触及新授权。
+_ = shareModule.hrv_call(withMethod: "webpage", params: shareArguments("orphan-web"), callback: nil)
+native.emitSubmitted("orphan-web", "requested")
+precondition(native.hasModuleOwner(requestID: "orphan-web"))
+native.pending.remove("orphan-web")
+_ = shareModule.hrv_call(withMethod: "authorize", params: "{\"requestId\":\"auth-with-orphan\"}", callback: nil)
+precondition(!native.hasModuleOwner(requestID: "orphan-web"))
+var orphanCancel = ""
+_ = shareModule.hrv_call(withMethod: "cancel", params: "{\"requestId\":\"orphan-web\"}", callback: { orphanCancel = ($0 as! [String: Any])["status"] as! String })
+precondition(orphanCancel == "no_pending" && native.hasPendingRequest(requestID: "auth-with-orphan"))
+_ = shareModule.hrv_call(withMethod: "cancel", params: "{\"requestId\":\"auth-with-orphan\"}", callback: nil)
+precondition(!native.hasPendingRequest(requestID: "auth-with-orphan"))
 for id in ["image-one", "image-two", "image-three"] {
     _ = shareModule.hrv_call(withMethod: "image", params: shareArguments(id), callback: { shareStatuses.append(($0 as! [String: Any])["status"] as! String) })
     precondition(native.hasModuleOwner(requestID: id))
@@ -126,3 +139,45 @@ shareModule.invalidate()
 precondition(native.cancelled.count == beforeShareCleanup + 1 && native.cancelled.last == "unchanged-transfer")
 precondition(native.observers.isEmpty)
 print("Production Swift receiver: image/nil-callback ownership released at ack, unattributed webpage releases, OAuth and transfer ownership preserved")
+
+// A successful OAuth callback may arrive before the app is active and before send completion.
+do {
+    let client = WechatClient()
+    WechatModule.clientProvider = { client }
+    let module = WechatModule()
+    var received = [[String: Any]]()
+    _ = module.hrv_call(withMethod: "listen", params: "{}") { if let value = $0 as? [String: Any] { received.append(value) } }
+    _ = module.hrv_call(withMethod: "authorize", params: "{\"requestId\":\"inactive-auth\"}") { _ in }
+    UIApplication.shared.applicationState = .inactive
+    client.pending.remove("inactive-auth")
+    client.emit(WechatReceipt(requestID: "inactive-auth", candidateRequestID: nil, kind: .authorization, errorCode: 0, attribution: .verified))
+    client.emitSubmitted("inactive-auth", "requested")
+    precondition(received.isEmpty)
+    UIApplication.shared.applicationState = .active
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+    precondition(received.count == 1 && received[0]["requestId"] as? String == "inactive-auth")
+    module.invalidate()
+}
+do {
+    let client = WechatClient()
+    WechatModule.clientProvider = { client }
+    let module = WechatModule()
+    var received = 0
+    _ = module.hrv_call(withMethod: "listen", params: "{}") { _ in received += 1 }
+    _ = module.hrv_call(withMethod: "authorize", params: "{\"requestId\":\"cancel-inactive\"}") { _ in }
+    UIApplication.shared.applicationState = .inactive
+    client.emit(WechatReceipt(requestID: "cancel-inactive", candidateRequestID: nil, kind: .authorization, errorCode: 0, attribution: .verified))
+    client.pending.remove("cancel-inactive")
+    client.cancellationHasPending = false
+    var cancelled = false
+    _ = module.hrv_call(withMethod: "cancel", params: "{\"requestId\":\"cancel-inactive\"}") {
+        cancelled = ($0 as? [String: Any])?["status"] as? String == "cancelled"
+    }
+    precondition(cancelled, "已验证但尚未交付的凭据也属于此 Module 的可撤销资源")
+    precondition(NotificationCenter.default.observerCount == 0, "取消缓冲凭据必须立即释放活跃态监听，不能等下次回前台")
+    UIApplication.shared.applicationState = .active
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+    precondition(received == 0)
+    module.invalidate()
+}
+print("Production receiver defers inactive OAuth until activation; cancellation and early submission retain exact ownership")

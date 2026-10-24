@@ -1,6 +1,44 @@
 package io.github.gycrosskit.wechat
 import kotlin.test.*
 class WechatSessionTest {
+    @Test fun acceptedWebpagesShareReceiptTrackingWithTransfersWithoutBlocking() {
+        val session = WechatSession()
+        for (index in 0..65) {
+            val kind = if (index % 2 == 0) WechatKind.SHARE else WechatKind.MERCHANT_TRANSFER
+            assertNull(session.begin("accepted-$index", "tx-$index", kind))
+            assertEquals(WechatStatus.BUSY, session.begin("overlap-$index", "overlap-tx-$index", WechatKind.SHARE))
+            assertTrue(session.finishSubmission("accepted-$index"))
+        }
+        assertFalse(session.isCurrent("accepted-0"))
+        assertNull(session.consume("tx-0", WechatKind.SHARE))
+        assertNull(session.begin("auth", "tx-auth", WechatKind.AUTHORIZATION, "state"))
+        assertNull(session.consume("tx-64", WechatKind.AUTHORIZATION, "state"))
+        assertEquals("accepted-64", session.consume("tx-64", WechatKind.SHARE)?.requestId)
+        assertNull(session.consume("tx-64", WechatKind.SHARE))
+        assertTrue(session.cancel("accepted-65"))
+        assertFalse(session.finishSubmission("accepted-65"))
+        assertNull(session.consume("tx-65", WechatKind.MERCHANT_TRANSFER))
+        assertTrue(session.isCurrent("auth"))
+        assertEquals("auth", session.consume("tx-auth", WechatKind.AUTHORIZATION, "state")?.requestId)
+    }
+    @Test fun acceptedWebpageRetainsTrustedPendingWhenStoreClearFails() {
+        var failClear = true
+        val session = WechatSession(object : WechatRequestStore {
+            override fun load(): WechatPendingRequest? = null
+            override fun save(request: WechatPendingRequest?) {
+                if (request == null && failClear) error("clear failed")
+            }
+        })
+        assertNull(session.begin("web", "tx-web", WechatKind.SHARE))
+        assertFalse(session.finishSubmission("web"))
+        assertEquals(WechatStatus.BUSY, session.begin("auth", "tx-auth", WechatKind.AUTHORIZATION, "state"))
+        assertTrue(session.isCurrent("web"))
+        failClear = false
+        assertTrue(session.finishSubmission("web"))
+        assertNull(session.begin("auth", "tx-auth", WechatKind.AUTHORIZATION, "state"))
+        assertTrue(session.cancel("web"))
+        assertTrue(session.isCurrent("auth"))
+    }
     @Test fun acceptedTransfersKeepReceiptsWithoutBlockingNewRequests() {
         val session = WechatSession()
         assertNull(session.begin("transfer-one", "tx-one", WechatKind.MERCHANT_TRANSFER))
@@ -65,7 +103,7 @@ class WechatSessionTest {
         assertNull(session.begin("web", "web-tx", WechatKind.SHARE))
         assertNull(session.consume("image-tx-2", WechatKind.SHARE))
         assertTrue(session.isCurrent("web"))
-        assertFalse(session.finishSubmission("web"))
+        assertTrue(session.finishSubmission("web"))
         assertNotNull(session.consume("web-tx", WechatKind.SHARE))
         assertNull(session.begin("auth", "auth-tx", WechatKind.AUTHORIZATION, "state"))
         assertNull(session.consume("image-tx-2", WechatKind.SHARE))
