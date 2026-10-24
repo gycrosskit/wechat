@@ -134,6 +134,27 @@ class AndroidWechatClientTest {
         assertFalse(client.hasPendingRequest("retry-65"))
     }
 
+    @Test fun webpageWithoutReceiptAllowsRetryAndOldReceiptCannotFinishNewAuthorization() {
+        client.handleIntent(Intent())
+        repeat(2) { index ->
+            client.shareWebPage("web-$index", "https://example.com", "title", "", image(), WechatScene.SESSION)
+            awaitSubmission(index + 1)
+            assertEquals("web-$index" to WechatStatus.REQUESTED, listener.submitted.last())
+        }
+        val first = WechatFactoryShadow.sent.first()
+        val second = WechatFactoryShadow.sent.last()
+        assertNull(store.saved)
+        client.authorize("auth-after-web")
+        WechatFactoryShadow.respond(SendMessageToWX.Resp().apply { transaction = first.transaction })
+        assertEquals("web-0", listener.receipts.single().requestId)
+        assertEquals(WechatAttribution.VERIFIED, listener.receipts.single().attribution)
+        client.cancel("web-1")
+        WechatFactoryShadow.respond(SendMessageToWX.Resp().apply { transaction = second.transaction })
+        assertEquals(1, listener.receipts.size)
+        assertTrue(client.hasPendingRequest("auth-after-web"))
+        assertEquals("auth-after-web", store.saved?.requestId)
+    }
+
     @Test fun transfersWithoutReceiptsDoNotBlockOrStealNewAuthorization() {
         client.handleIntent(Intent())
         client.openMerchantTransfer("first", "merchant", "app-id", "package")

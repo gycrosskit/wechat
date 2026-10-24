@@ -46,7 +46,7 @@ final class WechatSession {
     func begin(_ id: String, state: String? = nil, sharing: ShareMode? = nil) -> String? {
         guard !restorationFailed else { return "failed" }
         guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, id.utf16.count <= 128, !usedIDs.contains(id) else { return "invalid_content" }
-        guard submitting == nil, authorization == nil, share == nil else { return "busy" }
+        guard submitting == nil, authorization == nil else { return "busy" }
         usedIDs.insert(id)
         if let state {
             let request = WechatPendingAuthorization(requestID: id, state: state)
@@ -54,7 +54,11 @@ final class WechatSession {
             do { try store?.save(request) } catch { return "failed" }
             authorization = request
         }
-        if let sharing { share = (id, sharing, false) }
+        if let sharing {
+            // SDK 无分享 transaction；旧分享尚无回执时再次分享，后续回执不能归给任一候选。
+            if share?.dispatched == true { shareAttributionUncertain = true }
+            share = (id, sharing, false)
+        }
         submitting = id
         return nil
     }
@@ -87,6 +91,7 @@ final class WechatSession {
         authorization = nil
         return auth.requestID
     }
+    func isCurrent(_ id: String) -> Bool { submitting == id || authorization?.requestID == id || share?.id == id }
     func canResume(_ id: String) -> Bool { authorization?.requestID == id }
     func cancel(_ id: String) -> Bool {
         let active = submitting == id || authorization?.requestID == id || share?.id == id

@@ -126,6 +126,11 @@ public final class WechatClient: NSObject, WXApiDelegate {
         precondition(Thread.isMainThread)
         return session.canCorrelateShareReceipt
     }
+    /// Main：查询提交/授权等待或本地分享候选，不代表 SDK 已证明分享成功。
+    public func hasPendingRequest(requestID: String) -> Bool {
+        precondition(Thread.isMainThread)
+        return session.isCurrent(requestID)
+    }
     /// Main：已有 Renderer 持有的 ID 不可由新 Renderer 重复提交或认领。
     public func hasModuleOwner(requestID: String) -> Bool {
         precondition(Thread.isMainThread)

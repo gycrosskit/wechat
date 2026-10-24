@@ -26,7 +26,10 @@ kotlin {
         androidUnitTest { kotlin.srcDir(rootProject.file("wechat-kuikly/src/androidMain/kotlin")) }
         commonTest.dependencies { implementation(kotlin("test")) }
         // JVM 测试用薄 Kuikly transport stub 执行实际 Module，避免复制取消协议。
-        jvmTest { kotlin.srcDir(rootProject.file("wechat-kuikly/src/commonMain/kotlin")) }
+        jvmTest {
+            kotlin.srcDir(rootProject.file("wechat-kuikly/src/commonMain/kotlin"))
+            dependencies { implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2-1.0.0") }
+        }
     }
 }
 

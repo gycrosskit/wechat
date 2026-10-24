@@ -426,8 +426,31 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  }
  assert.equal(moduleSubmissions.length, 66); assert(moduleSubmissions.every(value => value === 'requested'));
  assert(slotPage.ids.size <= 65, '无回执连续操作不能无限累积 Renderer 归属');
- assert.equal(slots.transfers.size, 64, '只保留有界且不阻塞发送的回执关联');
- slotPage.onDestroy(); assert.equal(slots.transfers.size, 0);
+ assert.equal(slots.acceptedRequests.size, 64, '只保留有界且不阻塞发送的回执关联');
+ slotPage.onDestroy(); assert.equal(slots.acceptedRequests.size, 0);
+
+ const WebSlots = fresh(), webpageSlots = WebSlots.configure('web-app', { cacheDir: '/tmp' });
+ const webpageReceipts = []; webpageSlots.addListener(r => webpageReceipts.push(r));
+ const webpageRequests = [];
+ for (let index = 0; index < 66; index++) {
+   assert.equal(await webpageSlots.shareWebPage(`retry-web-${index}`, 'https://example.com', '', '', 'aA==', 'session'), 'requested');
+   webpageRequests.push(sent.at(-1));
+ }
+ assert.equal(webpageSlots.acceptedRequests.size, 64);
+ assert.equal(webpageSlots.canResume('retry-web-0'), false);
+ assert.equal(await webpageSlots.authorize('auth-after-web'), 'requested');
+ const webpageAuth = sent.at(-1);
+ webpageSlots.onResp(response(wx.SendAuthResp, webpageRequests[64], { state: webpageAuth.state, code: 'wrong-kind' }));
+ assert.equal(webpageReceipts.length, 0);
+ webpageSlots.onResp(response(wx.SendMessageToWXResp, webpageRequests[64]));
+ assert.equal(webpageReceipts.at(-1).requestId, 'retry-web-64');
+ assert.equal(webpageSlots.cancel('retry-web-65'), true);
+ webpageSlots.onResp(response(wx.SendMessageToWXResp, webpageRequests[65]));
+ assert.equal(webpageReceipts.length, 1);
+ assert.equal(webpageSlots.canResume('auth-after-web'), true);
+ webpageSlots.onResp(response(wx.SendAuthResp, webpageAuth, { state: webpageAuth.state, code: 'auth-code' }));
+ assert.equal(webpageReceipts.at(-1).requestId, 'auth-after-web');
+ console.log('OHOS webpages: 66 retries without final receipt, bounded tracking, exact kind/transaction, cancel and new auth isolation passed');
  console.log('OHOS transfer repeat launch without receipt, exact late/cancelled receipt attribution and failed journal clear passed');
  console.log('OHOS request context: singleton SDK, current Ability, async image owner snapshot passed');
  console.log('OHOS image repeat submission, no journal/resume/business receipt, busy until SDK ack, early/late receipt isolation and in-flight file retention passed');

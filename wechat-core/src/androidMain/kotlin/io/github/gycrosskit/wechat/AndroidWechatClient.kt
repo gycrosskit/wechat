@@ -35,7 +35,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
     private val queued = mutableMapOf<String, Request>()
     private val cancelledBeforeBegin = mutableSetOf<String>()
     private var currentRequest: Request? = null
-    private val transfers = linkedMapOf<String, Request>()
+    private val acceptedRequests = linkedMapOf<String, Request>()
     private val moduleListeners = mutableMapOf<WechatListener, Set<String>>()
     private val receipts = mutableListOf<Pair<WechatListener?, WechatReceipt>>()
     private val application = context.applicationContext
@@ -164,7 +164,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
     /** Main callback 返回真实取消结果；存储失败保留 pending，不能伪造终态。 */
     fun cancel(requestId: String, callback: (Result<Boolean>) -> Unit) = onMain {
         val waiting = synchronized(queued) { queued[requestId] }
-        val request = currentRequest?.takeIf { it.id == requestId } ?: transfers[requestId]
+        val request = currentRequest?.takeIf { it.id == requestId } ?: acceptedRequests[requestId]
         val cancelQueued = waiting != null && !waiting.cancelled
         if (waiting != null && cancelQueued) {
             waiting.cancelled = true
@@ -176,7 +176,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         if (cancelled) {
             receipts.removeAll { it.second.requestId == requestId }
             if (currentRequest === request) currentRequest = null
-            transfers.remove(requestId)
+            acceptedRequests.remove(requestId)
             submitted(request ?: Request(requestId, desiredOwner), WechatStatus.CANCELLED)
         } else if (waiting != null && cancelQueued) {
             submitted(waiting, WechatStatus.CANCELLED)
@@ -215,7 +215,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
             else -> return
         }
         val pending = try { session.consume(resp.transaction, kind, (resp as? SendAuth.Resp)?.state) } catch (_: Exception) { null } ?: return
-        val request = currentRequest?.takeIf { it.id == pending.requestId } ?: transfers.remove(pending.requestId)
+        val request = currentRequest?.takeIf { it.id == pending.requestId } ?: acceptedRequests.remove(pending.requestId)
         val owner = request?.owner
         if (currentRequest === request) currentRequest = null
         val code = (resp as? SendAuth.Resp)?.code?.takeIf { resp.errCode == 0 && it.isNotBlank() }
@@ -268,9 +268,9 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         if (accepted) {
             if (session.finishSubmission(request.id)) {
                 if (currentRequest === request) currentRequest = null
-                if (sdkRequest is WXOpenBusinessView.Req) {
-                    transfers[request.id] = request
-                    if (transfers.size > 64) transfers.remove(transfers.keys.first())
+                if (session.isCurrent(request.id)) {
+                    acceptedRequests[request.id] = request
+                    if (acceptedRequests.size > 64) acceptedRequests.remove(acceptedRequests.keys.first())
                 }
             }
             submitted(request, WechatStatus.REQUESTED)
