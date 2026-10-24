@@ -1,8 +1,10 @@
 # GY CrossKit Wechat
 
+> 当前源码候选统一为 **1.0.0**：Maven（core/Kuikly）、iOS Pod 与 OHPM 使用同版；尚未发布，示例坐标须待发布后远程消费。本地验证使用显式源码/本地 HAR，Kuikly 基线为 2.29.1，真机与新版本远程消费另验。
+
 未发布源码修复：网页分享在 SDK 受理后释放发送占用，不再等待最终回执才能重试。Android/OHOS 复用转账的有界回执关联；iOS 保留单笔候选，旧分享无回执时再次分享后只能交付 `UNATTRIBUTED`。本修复尚未发版，不包含在下述已冻结版本内，也不升级和合康正式提审依赖。
 
-修复候选组合：Maven `0.1.10-rc.1`、HAR `0.1.9-rc.1`，Git Pod / SPM 保留 `native-0.1.9`（Pod `0.1.9`）。Android/OHOS 转账受理后不再等待最终回执才能重试，OHOS 使用实际调用方 Ability context。发布与远程消费状态分别见 [Maven Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.10-rc.1) 和 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-0.1.9-rc.1)；发布候选声明不能替代渠道可消费及设备验收。
+历史修复组合：Maven `0.1.10-rc.1`、HAR `0.1.9-rc.1`，Git Pod / SPM 保留 `native-0.1.9`（Pod `0.1.9`）。Android/OHOS 转账受理后不再等待最终回执才能重试，OHOS 使用实际调用方 Ability context。发布与远程消费状态分别见 [Maven Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.10-rc.1) 和 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-0.1.9-rc.1)；发布候选声明不能替代渠道可消费及设备验收。
 
 2026-10-09 已发布：Maven `0.1.8`、Git Pod `native-0.1.7`（内部 `0.1.7`），HAR 不变。新增 Android/iOS Kuikly Native Module receiver 与平台变体；已发布 Maven `0.1.7` 不包含此能力。iOS receiver 从可选 `GycWechatNative/Kuikly` Git Pod subspec 导出，默认 Native Pod / Wechat SPM 不自动依赖 Kuikly。具体发布与远程验收结果见[对应 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.8)。接线见[接入指南的 Native receiver](docs/接入指南.md#androidios-kuikly-native-receiver)。
 
@@ -22,7 +24,7 @@ core 与原生client提供OAuth、图片/网页分享和商家转账确认页；
 
 ## 架构与调用流程
 
-宿主在隐私准入后持有进程级原生 client，并转发官方 SDK 回跳；请求受理与业务回执分开。可信 pending 存储由宿主提供，不能从外部回跳重建授权资格。
+Kuikly 三端统一通过 WechatModule 接入各端 receiver，并复用宿主已有唯一原生 client；原生非 Kuikly 消费者仍可直接用 core/client。宿主在隐私准入后转发官方 SDK 回跳；请求受理与业务回执分开。可信 pending 存储由宿主提供，不能从外部回跳重建授权资格。
 
 ```mermaid
 flowchart TB
@@ -30,6 +32,10 @@ flowchart TB
     H --> I["IosWechatClient<br/>宿主 IosWechatBridge"]
     I --> S["Swift WechatClient<br/>WechatSession"]
     H --> K["WechatModule<br/>Kuikly Kotlin"]
+    K --> AR["AndroidWechatModule<br/>Renderer receiver"]
+    AR --> A
+    K --> IR["Swift WechatModule<br/>Renderer receiver"]
+    IR --> S
     K --> R["WechatModule<br/>ArkTS Renderer"]
     R --> O["ArkTS WechatClient<br/>进程单例"]
     A --> SDK["各平台官方微信 SDK"]
@@ -147,24 +153,24 @@ dependencyResolutionManagement {
     }
 }
 // commonMain.dependencies
-implementation("com.github.gycrosskit.wechat:wechat-core:0.1.10-rc.1")
+implementation("com.github.gycrosskit.wechat:wechat-core:1.0.0")
 // Android/iOS/OHOS Kuikly 宿主额外添加：
-implementation("com.github.gycrosskit.wechat:wechat-kuikly:0.1.10-rc.1")
+implementation("com.github.gycrosskit.wechat:wechat-kuikly:1.0.0")
 ```
 
 iOS 选择 Git Pod，或 Xcode 的 Swift Package：
 
 ```ruby
-pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-0.1.9'
+pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-1.0.0'
 ```
 
-Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-0.1.9`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，Git Pod 不通过 CocoaPods Specs 分发。Native SPM 与 Pod 二选一；使用 `/Kuikly` subspec 时由其包含 Native，不再额外打包同名 SPM 产品。
+Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-1.0.0`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，Git Pod 不通过 CocoaPods Specs 分发。Native SPM 与 Pod 二选一；使用 `/Kuikly` subspec 时由其包含 Native，不再额外打包同名 SPM 产品。
 
 HarmonyOS 本版 HAR 为 `0.1.9-rc.1`，配套 Maven `0.1.10-rc.1` / Git Pod `native-0.1.9`。按精确 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-0.1.9-rc.1) 的 `WechatNative.har` 和 `har-release-checksums.txt` 冻结 SHA-256 校验后，可验证 Release HAR 消费；OHPM 审核及 Registry 安装/编译分别核实，不覆盖旧标签或归档。
 
 ```sh
 # 仅 Registry 精确版本可查询、可安装后使用；审核受理不等于上架。
-ohpm install @gycrosskit/wechat-native@0.1.9-rc.1
+ohpm install @gycrosskit/wechat-native@1.0.0
 ```
 
 受控发布仅使用 `ohpm publish --tag next`，不提升 `latest`。公开 Release HAR 消费与 Registry 安装分别验收，操作入口见[开发与验证](docs/开发与验证.md#har-rc-冻结与公开消费)。
@@ -235,3 +241,5 @@ GitHub-hosted runner 的实际结果以 Actions 为准；HAR 构建与精确公�
 阶段、缓存、有限网络重试、失败记录与证据边界见[共用 CI 规则](https://github.com/gycrosskit/.github/blob/main/docs/持续集成门禁.md)；本库实际平台命令以 workflow 为准。源码通过、远程消费、HAR/ohpm 与设备验收分别记录。
 
 公网核验同步组织 `templates/check-public-maven.py`：使用冻结归档给出的完整 publications 清单，核对 JitPack tag/commit、每个公开 POM/Module、全部声明变体字节大小和四类哈希、内部精确版本及 `available-at`；MD5/SHA-1 sidecar 必须匹配。SHA-256/SHA-512 sidecar 的 HTTP 404 单独输出为渠道缺失，不计为校验通过。
+
+当前未发布源码在现有 Module 增加 `awaitSubmission`，通用超时/取消按请求隔离；REQUESTED 不等待最终回执，也不阻止下一次请求。契约见[功能与平台差异](docs/功能与平台差异.md)。

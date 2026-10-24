@@ -4,6 +4,11 @@ import com.tencent.kuikly.core.module.CallbackRef
 import com.tencent.kuikly.core.module.Module
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import io.github.gycrosskit.wechat.*
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -14,6 +19,8 @@ class WechatModule : Module(), WechatClient {
     private var listening: CallbackRef? = null
     private val callbacks = mutableMapOf<String, CallbackRef>()
     private val cancellations = mutableMapOf<String, CallbackRef>()
+    private class Submission(val kind: WechatKind, val continuation: CancellableContinuation<WechatStatus>)
+    private val submissions = mutableMapOf<String, Submission>()
     private var disposed = false
     override fun moduleName(): String = NAME
     /** 注册长期回执；restoredRequestId 只能取宿主可信业务记录，不从页面回跳恢复。 */
@@ -37,18 +44,68 @@ class WechatModule : Module(), WechatClient {
                 "" -> if (requestId != null) WechatAttribution.VERIFIED else WechatAttribution.UNATTRIBUTED
                 else -> WechatAttribution.UNATTRIBUTED
             }
-            this.listener?.onReceipt(WechatReceipt(requestId, kind, payload.optInt("errorCode"),
+            val receipt = WechatReceipt(requestId, kind, payload.optInt("errorCode"),
                 payload.optString("authorizationCode").takeIf(String::isNotBlank), payload.optString("pageResult").takeIf(String::isNotBlank),
-                payload.optString("candidateRequestId").takeIf(String::isNotBlank), attribution))
+                payload.optString("candidateRequestId").takeIf(String::isNotBlank), attribution)
+            val id = when (receipt.attribution) {
+                WechatAttribution.VERIFIED -> receipt.requestId
+                WechatAttribution.SINGLE_PENDING -> receipt.candidateRequestId.takeIf { receipt.kind == WechatKind.SHARE }
+                WechatAttribution.UNATTRIBUTED -> null
+            }
+            // 部分 HAR 的早到回执会消费原生等待，不再发送 submitted；只完成匹配类型的本次提交。
+            val waiting = submissions[id]
+            if (waiting != null && waiting.kind != receipt.kind) return@toNative
+            if (waiting != null && waiting.continuation.isActive) {
+                waiting.continuation.resume(WechatStatus.REQUESTED)
+                submissions.remove(id)
+            }
+            this.listener?.onReceipt(receipt)
         }, false).callbackRef
     }
+    /** 页面协程等待提交，30 秒到期或取消仅撤销本次 ID；最终回执仍交给 listener。 */
+    suspend fun awaitSubmission(requestId: String, kind: WechatKind, send: WechatModule.() -> Unit): WechatStatus {
+        if (disposed) return WechatStatus.CANCELLED
+        if (listening == null) return WechatStatus.UNSUPPORTED
+        if (submissions.containsKey(requestId) || callbacks.containsKey(requestId)) return WechatStatus.BUSY
+        var waiting: Submission? = null
+        var requested = false
+        try {
+            return (withTimeoutOrNull(30_000L) {
+                suspendCancellableCoroutine { continuation ->
+                    if (!continuation.isActive) return@suspendCancellableCoroutine
+                    val entry = Submission(kind, continuation)
+                    waiting = entry
+                    submissions[requestId] = entry
+                    try { send() }
+                    catch (error: Exception) {
+                        if (continuation.isActive) continuation.resumeWith(Result.failure(error))
+                    }
+                }
+            } ?: WechatStatus.FAILED).also {
+                // 原生完成到协程恢复之间页面可能已销毁，不能再交付受理结果。
+                if (disposed) throw CancellationException("WechatModule is disposed")
+                requested = it == WechatStatus.REQUESTED
+            }
+        } finally {
+            if (submissions[requestId] === waiting) submissions.remove(requestId)
+            // 早到回执可能没有 submitted；该一次性回调也必须随本次等待释放。
+            callbacks.remove(requestId)?.let(::removeCallback)
+            if (!requested) cancel(requestId)
+        }
+    }
+
+    private fun submitted(id: String, status: WechatStatus) {
+        submissions.remove(id)?.continuation?.let { if (it.isActive) it.resume(status) }
+        listener?.onSubmitted(id, status)
+    }
+
     override fun authorize(requestId: String) = call(requestId, "authorize", JSONObject())
     override fun shareImage(requestId: String, data: ByteArray, scene: WechatScene, recipientId: String?, senderOpenId: String?) {
-        if (data.isEmpty() || data.size > MAX_IMAGE) { listener?.onSubmitted(requestId, WechatStatus.INVALID_CONTENT); return }
+        if (data.isEmpty() || data.size > MAX_IMAGE) { submitted(requestId, WechatStatus.INVALID_CONTENT); return }
         call(requestId, "image", JSONObject().apply { put("data", Base64.encode(data)); put("scene", sceneValue(scene)); recipientId?.let { put("recipientId", it) }; senderOpenId?.let { put("senderOpenId", it) } })
     }
     override fun shareWebPage(requestId: String, url: String, title: String, description: String, thumbnail: ByteArray, scene: WechatScene) {
-        if (thumbnail.isEmpty() || thumbnail.size > MAX_IMAGE) { listener?.onSubmitted(requestId, WechatStatus.INVALID_CONTENT); return }
+        if (thumbnail.isEmpty() || thumbnail.size > MAX_IMAGE) { submitted(requestId, WechatStatus.INVALID_CONTENT); return }
         call(requestId, "webpage", JSONObject().apply { put("url", url); put("title", title); put("description", description); put("thumbnail", Base64.encode(thumbnail)); put("scene", sceneValue(scene)) })
     }
     override fun openMerchantTransfer(requestId: String, merchantId: String, appId: String, packageValue: String) =
@@ -62,15 +119,15 @@ class WechatModule : Module(), WechatClient {
             // 取消失败不是原请求提交失败；原 pending 和迟回执仍由同一 owner 接收。
             if (!disposed && payload?.optString("status") == "cancelled") {
                 callbacks.remove(requestId)?.let(::removeCallback)
-                listener?.onSubmitted(requestId, WechatStatus.CANCELLED)
+                submitted(requestId, WechatStatus.CANCELLED)
             }
         }, false).callbackRef
         if (!completed && ref != null) cancellations[requestId] = ref
     }
     private fun call(id: String, method: String, args: JSONObject) {
-        if (disposed) { listener?.onSubmitted(id, WechatStatus.CANCELLED); return }
-        if (listening == null) { listener?.onSubmitted(id, WechatStatus.UNSUPPORTED); return }
-        if (callbacks.containsKey(id)) { listener?.onSubmitted(id, WechatStatus.BUSY); return }
+        if (disposed) { submitted(id, WechatStatus.CANCELLED); return }
+        if (listening == null) { submitted(id, WechatStatus.UNSUPPORTED); return }
+        if (callbacks.containsKey(id)) { submitted(id, WechatStatus.BUSY); return }
         args.put("requestId", id)
         var completed = false
         val ref = toNative(false, method, args.toString(), { payload ->
@@ -85,7 +142,7 @@ class WechatModule : Module(), WechatClient {
                 "pending" -> null
                 else -> WechatStatus.FAILED
             }
-            if (!disposed && status != null) listener?.onSubmitted(id, status)
+            if (!disposed && status != null) submitted(id, status)
         }, false).callbackRef
         if (!completed && ref != null) callbacks[id] = ref
     }
@@ -93,6 +150,7 @@ class WechatModule : Module(), WechatClient {
     fun dispose() {
         if (disposed) return
         disposed = true
+        submissions.values.toList().forEach { it.continuation.cancel() }; submissions.clear()
         toNative(false, "unlisten", "{}", null, false)
         listening?.let(::removeCallback); listening = null
         callbacks.values.forEach(::removeCallback); callbacks.clear(); listener = null

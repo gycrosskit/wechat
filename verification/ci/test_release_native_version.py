@@ -31,7 +31,7 @@ exit 75
 ''')
             pod.chmod(0o755)
             for label, arguments in [('renderer', []), ('local', ['GycWechatNative/Kuikly']),
-                                     ('remote', ['GycWechatNative/Kuikly', 'wechat', 'native-0.1.9'])]:
+                                     ('remote', ['GycWechatNative/Kuikly', 'wechat', 'native-1.0.0'])]:
                 with self.subTest(label=label):
                     receipt = folder / (label + '.json')
                     result = subprocess.run(['bash', str(ROOT / 'scripts/ci-build-kuikly-render.sh'),
@@ -47,7 +47,7 @@ exit 75
                         self.assertEqual(dependencies[0][0], ['GycWechatNative/Kuikly'])
                         options = dependencies[0][1]
                         if label == 'local': self.assertEqual(options, {'path': str(ROOT)})
-                        else: self.assertEqual(options, {'git': 'https://github.com/gycrosskit/wechat.git', 'tag': 'native-0.1.9'})
+                        else: self.assertEqual(options, {'git': 'https://github.com/gycrosskit/wechat.git', 'tag': 'native-1.0.0'})
 
     def test_current_module_pins_the_same_renderer_as_kotlin(self):
         result = subprocess.run(['pod', 'ipc', 'spec', 'GycWechatNative.podspec'], cwd=ROOT,
@@ -64,7 +64,7 @@ exit 75
         self.assertIn('GycWechatNative/Kuikly wechat "$native_tag"', workflow)
         with tempfile.TemporaryDirectory() as directory:
             spec = (ROOT / 'GycWechatNative.podspec').read_text()
-            spec = re.sub(r":tag => '[^']+'", ":tag => 'native-7.8.9'", spec)
+            spec = re.sub(r"s.version = '[^']+'", "s.version = '7.8.9'", spec)
             (Path(directory) / 'GycWechatNative.podspec').write_text(spec)
             result = subprocess.run(
                 ['bash', '-ec', command.group(1) + '\nprintf "%s" "$native_tag"'],
