@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import OpenKuiklyIOSRender
 
 /// 每 Renderer 一个 receiver，clientProvider 始终返回宿主既有进程 client；回跳仍交给该 client。
@@ -18,6 +19,8 @@ public final class WechatModule: KRBaseModule {
     private var receivedBeforeSubmission = Set<String>()
     private var cancelling = Set<String>()
     private var listener: KuiklyRenderCallback?
+    private var bufferedAuthorization: WechatReceipt?
+    private var activationObserver: NSObjectProtocol?
     private var active: Bool { withState { !invalidated && !released } }
 
     // 锁只保护桥的资源归属；SDK/Renderer callback 不在锁内执行，避免跨线程同步通信死锁。
@@ -67,16 +70,28 @@ public final class WechatModule: KRBaseModule {
         if method == "unlisten" { release(); return }
         guard withState({ listener != nil }), active else { if active { deliver(["status": "unsupported"], callback: callback) }; return }
         guard let id = args["requestId"] as? String, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, id.utf16.count <= 128 else { deliver(["status": "invalid_content"], callback: callback); return }
+        withState { ids = ids.filter { submissions[$0] != nil || bufferedAuthorization?.requestID == $0 || client.hasPendingRequest(requestID: $0) } }
         if method == "cancel" {
             let owned = withState { () -> Bool in
                 guard !invalidated, !released, ids.contains(id) else { return false }
                 cancelling.insert(id); return true
             }
             guard owned else { if active { deliver(["status": "no_pending"], callback: callback) }; return }
-            let cancelled = client.cancelWithResult(requestID: id)
+            let buffered = withState { bufferedAuthorization?.requestID == id }
+            // SDK 已消费 OAuth 回执时没有 native pending，但未交付的本页凭据仍须立即撤销。
+            let cancelled = client.cancelWithResult(requestID: id) || buffered
             withState {
                 cancelling.remove(id)
-                if cancelled { ids.remove(id); submissions.removeValue(forKey: id); receivedBeforeSubmission.remove(id) }
+                if cancelled {
+                    ids.remove(id); submissions.removeValue(forKey: id); receivedBeforeSubmission.remove(id)
+                    if bufferedAuthorization?.requestID == id { bufferedAuthorization = nil }
+                }
+            }
+            if cancelled && buffered {
+                let observer = withState { () -> NSObjectProtocol? in
+                    let token = activationObserver; activationObserver = nil; return token
+                }
+                if let observer { NotificationCenter.default.removeObserver(observer) }
             }
             if active { deliver(["status": cancelled ? "cancelled" : "no_pending"], callback: callback) }
             return
@@ -113,12 +128,32 @@ public final class WechatModule: KRBaseModule {
             if status == "cancelled" && cancelling.contains(id) { return nil }
             let submission = submissions.removeValue(forKey: id)
             let received = receivedBeforeSubmission.remove(id) != nil
-            if status != "requested" || submission?.awaitsReceipt == false || received { ids.remove(id) }
+            if status != "requested" || submission?.awaitsReceipt == false || received || bufferedAuthorization?.requestID != id && client?.hasPendingRequest(requestID: id) == false { ids.remove(id) }
             return submission?.callback
         }
         if active { deliver(["status": status], callback: callback) }
     }
     private func receipt(_ value: WechatReceipt) {
+        // 微信回跳可能早于 App 活跃；凭据交回 Renderer 前仍须保留原页面 owner。
+        if value.kind == .authorization, value.errorCode == 0, UIApplication.shared.applicationState != .active {
+            let owned = withState { () -> Bool in
+                guard !invalidated, !released, let id = value.requestID, ids.contains(id) else { return false }
+                bufferedAuthorization = value
+                return true
+            }
+            guard owned else { return }
+            if withState({ activationObserver == nil }) {
+                let observer = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification,
+                    object: nil, queue: .main) { [weak self] _ in self?.flushAuthorization() }
+                let retained = withState { () -> Bool in
+                    guard !invalidated, !released else { return false }
+                    activationObserver = observer
+                    return true
+                }
+                if !retained { NotificationCenter.default.removeObserver(observer) }
+            }
+            return
+        }
         // candidate 只用于投递到原页面，绝不提升成 SDK 证明的 requestId。
         let callback: KuiklyRenderCallback? = withState {
             guard !invalidated, !released, let id = value.requestID ?? value.candidateRequestID, ids.contains(id) else { return nil }
@@ -131,6 +166,16 @@ public final class WechatModule: KRBaseModule {
         result["authorizationCode"] = value.authorizationCode; result["pageResult"] = value.pageResult
         if active { deliver(result, callback: callback) }
     }
+    private func flushAuthorization() {
+        guard UIApplication.shared.applicationState == .active else { return }
+        let pending = withState { () -> (WechatReceipt?, NSObjectProtocol?) in
+            let result = (bufferedAuthorization, activationObserver)
+            bufferedAuthorization = nil; activationObserver = nil
+            return result
+        }
+        if let observer = pending.1 { NotificationCenter.default.removeObserver(observer) }
+        if let value = pending.0 { receipt(value) }
+    }
     private func deliver(_ value: [String: Any], callback: KuiklyRenderCallback?) {
         KuiklyRenderThreadManager.performOnContextQueue { [weak self] in
             guard let self, self.active, self.hr_rootView != nil else { return }
@@ -138,7 +183,7 @@ public final class WechatModule: KRBaseModule {
         }
     }
     public override func invalidate() {
-        let resources = withState { () -> (WechatClient?, UUID?, OwnedRequests?) in
+        let resources = withState { () -> (WechatClient?, UUID?, OwnedRequests?, NSObjectProtocol?) in
             invalidated = true
             return takeResources()
         }
@@ -148,15 +193,17 @@ public final class WechatModule: KRBaseModule {
         super.invalidate()
     }
     /// 调用方持有 lifecycleLock，SDK 清理在释放锁之后执行。
-    private func takeResources() -> (WechatClient?, UUID?, OwnedRequests?) {
-        guard !released else { return (nil, nil, nil) }
+    private func takeResources() -> (WechatClient?, UUID?, OwnedRequests?, NSObjectProtocol?) {
+        guard !released else { return (nil, nil, nil, nil) }
         released = true
-        let resources = (client, registration, ownership)
+        let resources = (client, registration, ownership, activationObserver)
+        activationObserver = nil; bufferedAuthorization = nil
         client = nil; registration = nil; listener = nil
         submissions.removeAll(); receivedBeforeSubmission.removeAll(); cancelling.removeAll()
         return resources
     }
-    private static func cleanup(_ resources: (WechatClient?, UUID?, OwnedRequests?)) {
+    private static func cleanup(_ resources: (WechatClient?, UUID?, OwnedRequests?, NSObjectProtocol?)) {
+        if let observer = resources.3 { NotificationCenter.default.removeObserver(observer) }
         // 先取消，再解除 reservation；SDK 同步回调中的新 listener 也不能抢占旧 pending。
         for id in resources.2?.ids ?? [] { resources.0?.cancel(requestID: id) }
         resources.2?.ids.removeAll()

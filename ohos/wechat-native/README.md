@@ -1,5 +1,7 @@
 # GY CrossKit Wechat Native
 
+未发布源码修复：网页分享在 SDK 受理后释放发送占用，不再等待最终回执才能重试。Android/OHOS 复用转账的有界回执关联；iOS 保留单笔候选，旧分享无回执时再次分享后只能交付 `UNATTRIBUTED`。本修复尚未发版，不包含在下述已冻结版本内，也不升级和合康正式提审依赖。
+
 适用版本：HAR `0.1.9-rc.1`，配套 Maven `0.1.9`。完整功能与五入口限制见[功能与平台差异](https://github.com/gycrosskit/wechat/blob/har-0.1.9-rc.1/docs/功能与平台差异.md)；构建、固定 Release HAR 消费与 OHPM Registry 可安装性分别见[此版发布记录](https://github.com/gycrosskit/wechat/releases/tag/har-0.1.9-rc.1)。
 
 HarmonyOS 微信授权、图片/网页分享与商家转账确认页入口，依赖 `@tencent/wechat_open_sdk` 1.0.23，HAR 要求 API 22。

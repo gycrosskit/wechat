@@ -17,7 +17,7 @@ Pod::Spec.new do |s|
   end
   s.subspec 'Kuikly' do |kuikly|
     kuikly.dependency 'GycWechatNative/Native'
-    kuikly.dependency 'OpenKuiklyIOSRender', '2.28.0'
+    kuikly.dependency 'OpenKuiklyIOSRender', '2.29.1'
     kuikly.source_files = 'iosApp/Sources/GycWechatKuikly/*.swift'
   end
 end

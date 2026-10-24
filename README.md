@@ -1,5 +1,7 @@
 # GY CrossKit Wechat
 
+未发布源码修复：网页分享在 SDK 受理后释放发送占用，不再等待最终回执才能重试。Android/OHOS 复用转账的有界回执关联；iOS 保留单笔候选，旧分享无回执时再次分享后只能交付 `UNATTRIBUTED`。本修复尚未发版，不包含在下述已冻结版本内，也不升级和合康正式提审依赖。
+
 修复候选组合：Maven `0.1.10-rc.1`、HAR `0.1.9-rc.1`，Git Pod / SPM 保留 `native-0.1.9`（Pod `0.1.9`）。Android/OHOS 转账受理后不再等待最终回执才能重试，OHOS 使用实际调用方 Ability context。发布与远程消费状态分别见 [Maven Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.10-rc.1) 和 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-0.1.9-rc.1)；发布候选声明不能替代渠道可消费及设备验收。
 
 2026-10-09 已发布：Maven `0.1.8`、Git Pod `native-0.1.7`（内部 `0.1.7`），HAR 不变。新增 Android/iOS Kuikly Native Module receiver 与平台变体；已发布 Maven `0.1.7` 不包含此能力。iOS receiver 从可选 `GycWechatNative/Kuikly` Git Pod subspec 导出，默认 Native Pod / Wechat SPM 不自动依赖 Kuikly。具体发布与远程验收结果见[对应 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.8)。接线见[接入指南的 Native receiver](docs/接入指南.md#androidios-kuikly-native-receiver)。
@@ -119,7 +121,7 @@ classDiagram
 | `wechat-core` | Android API 24；iOS 15；OHOS KMP 桥 | Android 微信 SDK 6.8.34；iOS 使用原生桥 |
 | `GycWechatNative` | iOS 15，Swift / Git Pod | WechatOpenSDK-XCFramework 2.0.7 |
 | `@gycrosskit/wechat-native` | HarmonyOS API 22 | @tencent/wechat_open_sdk 1.0.23 |
-| `wechat-kuikly` | 0.1.8含Android/iOS/OHOS Kuikly Module；已发布0.1.7仅OHOS | Kuikly core 2.28.0-2.0.21-ohos、render 2.28.0 |
+| `wechat-kuikly` | 0.1.8含Android/iOS/OHOS Kuikly Module；已发布0.1.7仅OHOS | 当前未发布候选：Kuikly 2.29.1；旧版锁 2.28.0 |
 
 KMP 使用 Kotlin **2.2.21-1.0.0** OHOS 工具链。KMP 产物和 HAR 是独立渠道；KMP 依赖不能代替原生 SDK 注册、回跳与签名配置。
 
