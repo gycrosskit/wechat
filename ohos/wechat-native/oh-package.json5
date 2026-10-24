@@ -9,7 +9,7 @@
   },
   "license": "Apache-2.0",
   "dependencies": {
-    "@kuikly-open/render": "2.28.0",
+    "@kuikly-open/render": "2.29.1",
     "@tencent/wechat_open_sdk": "1.0.23"
   },
   "repository": "https://github.com/gycrosskit/wechat"

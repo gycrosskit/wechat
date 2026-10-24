@@ -1,5 +1,7 @@
 # GY CrossKit Wechat
 
+当前开发分支的 Kuikly 与宿主统一：KMP 使用 `2.29.1-2.0.21-ohos`，iOS/OHOS Renderer 使用 `2.29.1`。以后随宿主同步升级；本次调整尚未发布，旧版本的接入与验收记录以对应 tag 为准。
+
 修复候选组合：Maven `0.1.10-rc.1`、HAR `0.1.9-rc.1`，Git Pod / SPM 保留 `native-0.1.9`（Pod `0.1.9`）。Android/OHOS 转账受理后不再等待最终回执才能重试，OHOS 使用实际调用方 Ability context。发布与远程消费状态分别见 [Maven Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.10-rc.1) 和 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-0.1.9-rc.1)；发布候选声明不能替代渠道可消费及设备验收。
 
 2026-10-09 已发布：Maven `0.1.8`、Git Pod `native-0.1.7`（内部 `0.1.7`），HAR 不变。新增 Android/iOS Kuikly Native Module receiver 与平台变体；已发布 Maven `0.1.7` 不包含此能力。iOS receiver 从可选 `GycWechatNative/Kuikly` Git Pod subspec 导出，默认 Native Pod / Wechat SPM 不自动依赖 Kuikly。具体发布与远程验收结果见[对应 Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.8)。接线见[接入指南的 Native receiver](docs/接入指南.md#androidios-kuikly-native-receiver)。
