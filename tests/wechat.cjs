@@ -247,7 +247,7 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  restoredPage.onDestroy(); foreignPage.onDestroy();
  console.log('Real OHOS cancel bridge: failed clear retains owner, late receipt, unknown/foreign/completed ID, retry and late submission ack passed');
 
- // 独立CMP退出复核：受理与回执分离、活动页面归属、释放异常不改写SDK受理结果。
+ // 移除独立 CMP UI 后的回归复核：受理与回执分离、活动页面归属、释放异常不改写SDK受理结果。
  const RegressionClient = fresh(); let regressionSaved = null, duringClear;
  const regressionClient = RegressionClient.configure('host-app-id', { cacheDir: '/tmp' }, {
    load: () => regressionSaved,
