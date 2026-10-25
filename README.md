@@ -1,6 +1,6 @@
 # GY CrossKit Wechat
 
-> 当前源码候选统一为 **1.0.0**：Maven（core/Kuikly）、iOS Pod 与 OHPM 使用同版；尚未发布，示例坐标须待发布后远程消费。本地验证使用显式源码/本地 HAR，Kuikly 基线为 2.29.1，真机与新版本远程消费另验。
+> 当前源码候选统一为 **1.0.1**：Maven（core/Kuikly）、iOS Pod 与 OHPM 使用同版；尚未发布，示例坐标须待发布后远程消费。本地验证使用显式源码/本地 HAR，Kuikly 基线为 2.29.1，真机与新版本远程消费另验。
 
 未发布源码修复：网页分享在 SDK 受理后释放发送占用，不再等待最终回执才能重试。Android/OHOS 复用转账的有界回执关联；iOS 保留单笔候选，旧分享无回执时再次分享后只能交付 `UNATTRIBUTED`。本修复尚未发版，不包含在下述已冻结版本内，也不升级和合康正式提审依赖。
 
@@ -153,24 +153,24 @@ dependencyResolutionManagement {
     }
 }
 // commonMain.dependencies
-implementation("com.github.gycrosskit.wechat:wechat-core:1.0.0")
+implementation("com.github.gycrosskit.wechat:wechat-core:1.0.1")
 // Android/iOS/OHOS Kuikly 宿主额外添加：
-implementation("com.github.gycrosskit.wechat:wechat-kuikly:1.0.0")
+implementation("com.github.gycrosskit.wechat:wechat-kuikly:1.0.1")
 ```
 
 iOS 选择 Git Pod，或 Xcode 的 Swift Package：
 
 ```ruby
-pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-1.0.0'
+pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-1.0.1'
 ```
 
-Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-1.0.0`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，Git Pod 不通过 CocoaPods Specs 分发。Native SPM 与 Pod 二选一；使用 `/Kuikly` subspec 时由其包含 Native，不再额外打包同名 SPM 产品。
+Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-1.0.1`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，Git Pod 不通过 CocoaPods Specs 分发。Native SPM 与 Pod 二选一；使用 `/Kuikly` subspec 时由其包含 Native，不再额外打包同名 SPM 产品。
 
 HarmonyOS 本版 HAR 为 `0.1.9-rc.1`，配套 Maven `0.1.10-rc.1` / Git Pod `native-0.1.9`。按精确 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-0.1.9-rc.1) 的 `WechatNative.har` 和 `har-release-checksums.txt` 冻结 SHA-256 校验后，可验证 Release HAR 消费；OHPM 审核及 Registry 安装/编译分别核实，不覆盖旧标签或归档。
 
 ```sh
 # 仅 Registry 精确版本可查询、可安装后使用；审核受理不等于上架。
-ohpm install @gycrosskit/wechat-native@1.0.0
+ohpm install @gycrosskit/wechat-native@1.0.1
 ```
 
 受控发布仅使用 `ohpm publish --tag next`，不提升 `latest`。公开 Release HAR 消费与 Registry 安装分别验收，操作入口见[开发与验证](docs/开发与验证.md#har-rc-冻结与公开消费)。
