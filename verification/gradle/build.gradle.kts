@@ -2,7 +2,7 @@ plugins {
     kotlin("multiplatform") version "2.2.21-1.0.0"
     id("com.android.library") version "8.10.1"
 }
-val componentVersion = providers.gradleProperty("wechatVersion").orElse("1.0.0").get()
+val componentVersion = providers.gradleProperty("wechatVersion").orElse("1.0.1").get()
 val verifyNativeModule = providers.gradleProperty("verifyNativeModule").orElse("false").get().toBoolean()
 val kuiklyRenderFrameworkDir = providers.gradleProperty("kuiklyRenderFrameworkDir").orNull
 kotlin {
