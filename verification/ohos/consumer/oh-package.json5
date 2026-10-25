@@ -1,1 +1,1 @@
-{"name":"wechat-consumer","version":"0.1.4","main":"Index.ets","dependencies":{"@gycrosskit/wechat-native":"1.0.0"}}
+{"name":"wechat-consumer","version":"0.1.4","main":"Index.ets","dependencies":{"@gycrosskit/wechat-native":"1.0.1"}}

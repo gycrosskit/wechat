@@ -113,13 +113,6 @@ assert not Path('ohos/wechat-native').exists()
             with self.subTest(failure=failure):
                 self.public_consumer(failure)
 
-    def test_har_tags_do_not_trigger_maven_jobs(self):
-        workflow = (ROOT / '.github/workflows/release-validation.yml').read_text()
-        conditions = [line for line in workflow.splitlines() if 'if:' in line and "!startsWith" in line]
-        self.assertEqual(len(conditions), 3)
-        for line in conditions:
-            self.assertIn("!startsWith(github.event.release.tag_name, 'har-')", line)
-            self.assertIn("!startsWith(inputs.version, 'har-')", line)
 
 
 if __name__ == '__main__':

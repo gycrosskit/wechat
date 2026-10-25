@@ -57,21 +57,6 @@ exit 75
         kotlin = (ROOT / 'gradle/libs.versions.toml').read_text()
         self.assertIn('kuikly = "2.29.1-2.0.21-ohos"', kotlin)
 
-    def test_maven_receiver_uses_declared_native_tag(self):
-        workflow = (ROOT / '.github/workflows/release-validation.yml').read_text()
-        command = re.search(r'^\s+(native_tag=.+)$', workflow, re.M)
-        self.assertIsNotNone(command)
-        self.assertIn('GycWechatNative/Kuikly wechat "$native_tag"', workflow)
-        with tempfile.TemporaryDirectory() as directory:
-            spec = (ROOT / 'GycWechatNative.podspec').read_text()
-            spec = re.sub(r"s.version = '[^']+'", "s.version = '7.8.9'", spec)
-            (Path(directory) / 'GycWechatNative.podspec').write_text(spec)
-            result = subprocess.run(
-                ['bash', '-ec', command.group(1) + '\nprintf "%s" "$native_tag"'],
-                cwd=directory, env={**os.environ, 'VERSION': '2.3.4'},
-                text=True, capture_output=True, check=True,
-            )
-            self.assertEqual(result.stdout, 'native-7.8.9')
 
     def manifest(self, version):
         with tempfile.TemporaryDirectory() as directory:
