@@ -34,6 +34,7 @@ class ReceiptProbe {
     var statuses: [String] = []
     var accepted = true
     func deliver(_ value: WechatReceipt) { receipt = value }
+    func notifySubmitted(_ id: String, _ status: String) { statuses.append(status) }
     func begin(_ id: String, state: String? = nil, sharing: WechatSession.ShareMode? = nil) -> Bool {
         if let status = session.begin(id, state: state, sharing: sharing) { statuses.append(status); return false }
         return true
@@ -114,7 +115,7 @@ let repeating = WechatSession()
 for id in ["image-1", "image-2", "image-3"] {
     precondition(repeating.begin(id, sharing: .submissionOnly) == nil)
     precondition(repeating.dispatchedShare(id))
-    precondition(repeating.begin(id + "-overlap") == "busy")
+    precondition(repeating.begin(id + "-parallel-transfer") == nil)
     precondition(repeating.submitted(id, accepted: true))
 }
 precondition(repeating.begin("after-images-auth", state: "auth-state") == nil)
@@ -133,11 +134,11 @@ precondition(unsent.begin("unsent", sharing: .submissionOnly) == nil && unsent.c
 precondition(!unsent.dispatchedShare("unsent"))
 precondition(unsent.begin("fresh-web", sharing: .tracked) == nil && unsent.dispatchedShare("fresh-web"))
 precondition(unsent.consumeShare() == "fresh-web")
-precondition(unsent.begin("before-ack") == "busy")
-precondition(unsent.submitted("fresh-web", accepted: true))
+precondition(unsent.begin("before-ack") == nil)
+precondition(!unsent.submitted("fresh-web", accepted: true))
 precondition(unsent.begin("new-image", sharing: .submissionOnly) == nil)
 precondition(!unsent.submitted("fresh-web", accepted: false) && !unsent.cancel("fresh-web"))
-precondition(unsent.begin("still-busy") == "busy")
+precondition(unsent.begin("independent-transfer") == nil)
 precondition(unsent.dispatchedShare("new-image") && unsent.cancel("new-image"))
 precondition(unsent.begin("new-web", sharing: .tracked) == nil && unsent.dispatchedShare("new-web"))
 precondition(!unsent.submitted("new-image", accepted: true) && !unsent.cancel("new-image"))

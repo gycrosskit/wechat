@@ -76,7 +76,10 @@ class AndroidWechatModule(private val client: AndroidWechatClient) : KuiklyRende
         if (status == WechatStatus.CANCELLED && requestId in cancelling) return
         val callback = submissions.remove(requestId)
         if (status != WechatStatus.REQUESTED || receivedBeforeSubmission.remove(requestId) || !client.hasPendingRequest(requestId)) ids.remove(requestId)
-        callback?.invoke(status(status.name.lowercase()))
+        if (callback != null) callback.invoke(status(status.name.lowercase()))
+        else if (status == WechatStatus.CANCELLED) {
+            listener?.invoke(JSONObject().put("requestId", requestId).put("status", "cancelled").toString())
+        }
     }
     override fun onReceipt(receipt: WechatReceipt) {
         val id = receipt.requestId ?: return

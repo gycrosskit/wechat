@@ -29,7 +29,7 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  const receipts = []; client.addListener(r => receipts.push(r));
  assert.equal(await client.authorize('oauth-1'), 'requested');
  const req = sent.at(-1); assert(req.state.length >= 40);
- assert.equal(await client.authorize('oauth-busy'), 'busy');
+ assert.equal(await client.authorize(''), 'invalid_content');
  client.onResp(response(wx.SendAuthResp, req, { state: 'forged', code: 'secret' }));
  client.onResp(response(wx.SendAuthResp, req, { state: undefined, errCode: -2 }));
  assert.equal(receipts.length, 0);
@@ -116,7 +116,7 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  accepted = 'delay'; const delayedImage = imageFlow.shareImage('image-delayed', 'aGVsbG8=', 'session'); await new Promise(resolve => setImmediate(resolve));
  const delayedImageReq = sent.at(-1); const delayedImageAck = pendingSend;
  assert.equal(imageSaved, null); assert.equal(files.size, 1);
- assert.equal(await imageFlow.shareImage('image-submitting-busy', 'aGVsbG8=', 'session'), 'busy');
+ assert.equal(await imageFlow.shareImage('image-submitting-invalid', 'aGVsbG8=', 'other'), 'invalid_content');
  assert.equal(imageFlow.cancel('image-delayed'), true); await flush(); assert.equal(files.size, 1, 'in-flight SDK can still read the URI');
  accepted = true; assert.equal(await imageFlow.authorize('image-successor-auth'), 'requested'); const successorAuth = sent.at(-1);
  delayedImageAck(true); assert.equal(await delayedImage, 'cancelled'); assert.equal(files.size, 1);
@@ -128,7 +128,7 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  accepted = 'delay'; const earlyImage = imageFlow.shareImage('image-early-receipt', 'aGVsbG8=', 'session'); await new Promise(resolve => setImmediate(resolve));
  const earlyImageReq = sent.at(-1); const earlyImageAck = pendingSend;
  imageFlow.onResp(response(wx.SendMessageToWXResp, earlyImageReq)); await flush(); assert.equal(files.size, 0);
- assert.equal(await imageFlow.authorize('image-before-ack-busy'), 'busy');
+ accepted = true; assert.equal(await imageFlow.authorize('image-before-ack-auth'), 'requested'); imageFlow.cancel('image-before-ack-auth');
  earlyImageAck(true); assert.equal(await earlyImage, 'requested'); assert.equal(imageFlow.canResume('image-early-receipt'), false);
  assert.equal(imageResults.length, 1); accepted = true;
  accepted = 'delay'; const refusedAfterCancel = imageFlow.shareImage('image-cancelled-rejected', 'aGVsbG8=', 'session'); await new Promise(resolve => setImmediate(resolve));
@@ -170,7 +170,7 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  thirdClient.handleWant({ verified: true, response: response(wx.SendMessageToWXResp, typeReq) });
  thirdClient.handleWant({ verified: true, response: response(wx.SendAuthResp, { transaction: 'unknown' }, { state: typeReq.state, code: 'code' }) });
  thirdClient.handleWant({ verified: true, response: response(wx.SendAuthResp, typeReq, { state: 'wrong', code: 'code' }) });
- assert.equal(repeats.length, 0); assert.equal(await thirdClient.authorize('busy-cold'), 'busy');
+ assert.equal(repeats.length, 0); assert.equal(await thirdClient.authorize('type-guard'), 'invalid_content');
  thirdClient.cancel('type-guard'); assert.equal(saved, null);
  const Fourth = fresh(); const fourth = Fourth.configure('host-app-id', { cacheDir: '/tmp' }, store); const cancelled = [];
  fourth.addListener(r => cancelled.push(r)); fourth.handleWant({ verified: true, response: response(wx.SendAuthResp, typeReq, { state: typeReq.state, code: 'late' }) }); assert.equal(cancelled.length, 0);
@@ -194,7 +194,7 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  const CancelClient = fresh(); let cancelSaved = null, failClear = false;
  const cancelClient = CancelClient.configure('host-app-id', { cacheDir: '/tmp' }, {
   load: () => cancelSaved,
-  save: value => { if (!value && failClear) throw Error('disk unavailable'); cancelSaved = value ? { ...value } : null; }
+  save: value => { if (failClear) throw Error('disk unavailable'); cancelSaved = value ? { ...value } : null; }
  });
  const cancelModule = { exports: {} };
  vm.runInNewContext(moduleOutput, { exports: cancelModule.exports, require: key => key === './WechatClient' ? { WechatClient: CancelClient } : render, Set });
@@ -208,7 +208,7 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  callCancel('unknown'); assert.equal(cancelAcks.at(-1), 'no_pending');
  const foreignPage = new cancelModule.exports.WechatModule(); foreignPage.call('listen', '{}', () => assert.fail('foreign receipt'));
  foreignPage.call('cancel', JSON.stringify({ requestId: 'cancel-fails-late-receipt' }), value => assert.equal(value.status, 'no_pending'));
- assert.equal(await cancelClient.authorize('still-busy'), 'busy');
+ await assert.rejects(cancelClient.authorize('blocked-replacement'), /disk unavailable/);
  failClear = false;
  cancelClient.handleWant({ verified: true, response: response(wx.SendAuthResp, cancelReq, { state: cancelReq.state, code: 'late-but-owned' }) });
  assert.equal(cancelReceipts.length, 1); assert.equal(cancelReceipts[0].requestId, 'cancel-fails-late-receipt');
@@ -393,66 +393,251 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
  assert.equal(await scoped.authorize('context-next-auth'), 'requested');
  assert.equal(sentContexts.at(-1), mainContext, '后继请求使用最新调用方 context');
  scoped.cancel('context-next-auth');
- const Slots = fresh(), slots = Slots.configure('host-app-id', mainContext), slotReceipts = [];
- slots.addListener(value => slotReceipts.push(value));
+ // 三类并行，替换立即终止本地等待；迟 SDK ack / 回执不能清掉任何后继轮。
+ const Parallel = fresh(); let parallelJournal = null, rejectJournal = false;
+ const parallel = Parallel.configure('parallel-app', mainContext, {
+   load: () => parallelJournal,
+   save: value => { if (rejectJournal) throw Error('atomic journal rejected'); parallelJournal = value ? { ...value } : null; }
+ });
+ const parallelReceipts = [], controls = [];
+ parallel.addListener(r => parallelReceipts.push(r), null, (id, status) => controls.push({ id, status }));
+ accepted = 'delay'; let oldAuthStatus;
+ const oldAuthorization = parallel.authorize('parallel-auth-old').then(value => oldAuthStatus = value);
+ const oldAuthReq = sent.at(-1), oldAuthAck = pendingSend;
+ const oldWeb = parallel.shareWebPage('parallel-web-old', 'https://example.com', '', '', 'aA==', 'session');
+ await new Promise(resolve => setImmediate(resolve)); const oldWebReq = sent.at(-1), oldWebAck = pendingSend;
+ const oldTransfer = parallel.openMerchantTransfer('parallel-transfer-old', 'merchant', 'app', 'package');
+ const oldTransferReq = sent.at(-1), oldTransferAck = pendingSend;
+ assert.equal(parallel.currentRequests.size, 3); assert.equal(parallelJournal.requestId, 'parallel-auth-old');
+ accepted = true; assert.equal(await parallel.authorize('parallel-auth-new'), 'requested'); const newAuthReq = sent.at(-1);
+ await flush(); assert.equal(oldAuthStatus, 'cancelled', 'replacement cannot wait for the SDK ack');
+ assert.equal(parallelJournal.requestId, 'parallel-auth-new'); assert.equal(controls[0].id, 'parallel-auth-old');
+ oldAuthAck(false); await oldAuthorization; assert.equal(parallelJournal.requestId, 'parallel-auth-new');
+ parallel.onResp(response(wx.SendAuthResp, oldAuthReq, { state: oldAuthReq.state, code: 'late' }));
+ assert.equal(parallelReceipts.length, 0); assert.equal(parallel.cancel('parallel-auth-old'), false);
+ assert.equal(await parallel.shareWebPage('parallel-web-new', 'https://example.com', '', '', 'aA==', 'session'), 'requested');
+ const newWebReq = sent.at(-1); assert.equal(await oldWeb, 'cancelled');
+ assert.equal(await parallel.openMerchantTransfer('parallel-transfer-new', 'merchant', 'app', 'package'), 'requested');
+ const newTransferReq = sent.at(-1); assert.equal(await oldTransfer, 'cancelled');
+ oldWebAck(true); oldTransferAck(false); await flush();
+ parallel.onResp(response(wx.SendMessageToWXResp, oldWebReq));
+ parallel.onResp(response(wx.OpenBusinessViewResp, oldTransferReq, { businessType: 'requestMerchantTransfer' }));
+ assert.equal(parallelReceipts.length, 0); assert.equal(parallel.currentRequests.size, 3);
+ // 无效参数、SDK不可用和原子写失败均保留旧轮；非OAuth不依赖OAuth journal可写。
+ assert.equal(await parallel.openMerchantTransfer('invalid-successor', '', 'app', 'package'), 'invalid_content');
+ assert.equal(await parallel.openMerchantTransfer('invalid-utf16-successor', 'merchant', 'app', '\uD800'), 'invalid_content');
+ assert.equal(await parallel.shareWebPage('invalid-base64-successor', 'https://example.com', '', '', 'bad', 'session'), 'invalid_content');
+ assert.equal(parallel.canResume('parallel-web-new'), true);
+ installed = false; assert.equal(await parallel.authorize('uninstalled-successor'), 'not_installed'); installed = true;
+ assert.equal(await parallel.authorize('uninstalled-successor'), 'invalid_content');
+ rejectJournal = true; await assert.rejects(parallel.authorize('failed-successor'), /atomic journal rejected/);
+ assert.equal(parallelJournal.requestId, 'parallel-auth-new'); assert.equal(parallel.canResume('parallel-auth-new'), true);
+ assert.equal(await parallel.openMerchantTransfer('store-independent-transfer', 'merchant', 'app', 'package'), 'requested');
+ assert.equal(parallel.cancel('store-independent-transfer'), true); assert.equal(parallelJournal.requestId, 'parallel-auth-new');
+ rejectJournal = false;
+ parallel.onResp(response(wx.SendMessageToWXResp, newWebReq)); assert.equal(parallelJournal.requestId, 'parallel-auth-new');
+ parallel.onResp(response(wx.OpenBusinessViewResp, newTransferReq, { businessType: 'requestMerchantTransfer' }));
+ assert.equal(parallelReceipts.length, 1, 'replaced second transfer stays stale');
+ parallel.onResp(response(wx.SendAuthResp, newAuthReq, { state: newAuthReq.state, code: 'current-code' }));
+ assert.equal(parallelReceipts.length, 2); assert.equal(parallelJournal, null);
+
+ // 旧单条非OAuth journal仍可恢复；新OAuth接管journal后，旧非OAuth消费不能清它。
+ for (const kind of ['share', 'merchant_transfer']) {
+   const Legacy = fresh(); let legacyJournal = { requestId: 'legacy-' + kind, transaction: 'legacy-tx-' + kind, kind, state: '' };
+   const legacy = Legacy.configure('legacy-app', mainContext, { load: () => legacyJournal, save: value => { legacyJournal = value; } });
+   const legacyReceipts = []; legacy.addListener(r => legacyReceipts.push(r));
+   assert.equal(legacy.canResume('legacy-' + kind), true);
+   assert.equal(await legacy.authorize('legacy-successor-auth'), 'requested'); const auth = sent.at(-1);
+   const Type = kind === 'share' ? wx.SendMessageToWXResp : wx.OpenBusinessViewResp;
+   legacy.onResp(response(Type, { transaction: 'legacy-tx-' + kind }, { businessType: 'requestMerchantTransfer' }));
+   assert.equal(legacyReceipts[0].requestId, 'legacy-' + kind); assert.equal(legacyJournal.requestId, 'legacy-successor-auth');
+   legacy.onResp(response(wx.SendAuthResp, auth, { state: auth.state, code: 'legacy-current' })); assert.equal(legacyJournal, null);
+ }
+ // 取消通知和成功回执均先释放旧轮；重入第3轮后，第2轮不得再发送或清除第3轮。
+ const Reentry = fresh(); let reentryJournal = null;
+ const reentry = Reentry.configure('reentry-app', mainContext, { load: () => null, save: value => { reentryJournal = value; } });
+ let thirdAuthorization; const reentryControls = [];
+ reentry.addListener(() => {}, null, (id, status) => {
+   reentryControls.push({ id, status });
+   if (id === 'reentry-first') thirdAuthorization = reentry.authorize('reentry-third');
+ });
+ assert.equal(await reentry.authorize('reentry-first'), 'requested'); const firstReentryReq = sent.at(-1), beforeReentry = sent.length;
+ assert.equal(await reentry.authorize('reentry-second'), 'cancelled'); assert.equal(await thirdAuthorization, 'requested');
+ assert.equal(sent.length, beforeReentry + 1); assert.equal(reentryJournal.requestId, 'reentry-third');
+ assert.deepEqual(reentryControls.map(value => value.id), ['reentry-first', 'reentry-second']);
+ reentry.onResp(response(wx.SendAuthResp, firstReentryReq, { state: firstReentryReq.state, code: 'late-first' }));
+ const thirdReentryReq = sent.at(-1); let receiptReentry;
+ reentry.addListener(receipt => { if (receipt.requestId === 'reentry-third') receiptReentry = reentry.authorize('reentry-fourth'); });
+ reentry.onResp(response(wx.SendAuthResp, thirdReentryReq, { state: thirdReentryReq.state, code: 'third' }));
+ assert.equal(await receiptReentry, 'requested'); assert.equal(reentryJournal.requestId, 'reentry-fourth'); reentry.cancel('reentry-fourth');
+ // 同share类型的图片准备也必须及时取消，不能等解码结束后反超新网页。
+ let finishOldPacking; packingGate = new Promise(resolve => { finishOldPacking = resolve; });
+ let preparingStatus; const preparing = parallel.shareImage('replaced-preparing-image', 'aGVsbG8=', 'session').then(status => preparingStatus = status);
+ await flush(); packingGate = null;
+ assert.equal(await parallel.shareWebPage('after-preparing-image', 'https://example.com', '', '', 'aA==', 'session'), 'requested');
+ const afterPreparingReq = sent.at(-1); await flush(); assert.equal(preparingStatus, 'cancelled');
+ finishOldPacking(); await preparing; await flush(); assert.equal(sent.at(-1), afterPreparingReq);
+ parallel.onResp(response(wx.SendMessageToWXResp, afterPreparingReq));
+ console.log('OHOS current-round regressions: parallel SDK waits, prompt cancellation, atomic OAuth replacement, legacy journal and callback reentry passed');
+ const Slots = fresh(), slots = Slots.configure('host-app-id', mainContext), slotReceipts = [], slotCancellations = [];
+ slots.addListener(value => slotReceipts.push(value), null, (id, status) => slotCancellations.push({ id, status }));
  const transferRequests = [];
- for (let index = 0; index < 2; index++) {
+ for (let index = 0; index < 66; index++) {
    assert.equal(await slots.openMerchantTransfer(`retry-transfer-${index}`, 'merchant', 'app', 'package'), 'requested');
    transferRequests.push(sent.at(-1));
  }
- assert.equal(await slots.authorize('after-transfers-auth'), 'requested');
- const stillActiveAuth = sent.at(-1);
+ assert.equal(slotCancellations.length, 65); assert.equal(slotCancellations[0].id, 'retry-transfer-0');
+ assert.equal(slots.currentRequests.size, 1); assert.equal(slots.canResume('retry-transfer-0'), false);
+ assert.equal(await slots.authorize('after-transfers-auth'), 'requested'); const stillActiveAuth = sent.at(-1);
  slots.onResp(response(wx.OpenBusinessViewResp, transferRequests[0], { businessType: 'requestMerchantTransfer', extMsg: '{"result":"success"}' }));
- assert.equal(slotReceipts.at(-1).requestId, 'retry-transfer-0');
- assert.equal(slots.canResume('after-transfers-auth'), true, '旧转账回执不能清除新授权');
- assert.equal(slots.cancel('retry-transfer-1'), true);
- slots.onResp(response(wx.OpenBusinessViewResp, transferRequests[1], { businessType: 'requestMerchantTransfer' }));
- assert.equal(slotReceipts.length, 1, '取消后的转账回执不能归给后继请求');
- assert.equal(slots.canResume('after-transfers-auth'), true);
+ assert.equal(slotReceipts.length, 0, 'replaced transfer receipt is ignored');
+ assert.equal(slots.cancel('retry-transfer-0'), false); assert.equal(slots.canResume('after-transfers-auth'), true);
+ slots.onResp(response(wx.OpenBusinessViewResp, transferRequests[65], { businessType: 'requestMerchantTransfer', extMsg: '{"result":"success"}' }));
+ assert.equal(slotReceipts.at(-1).requestId, 'retry-transfer-65'); assert.equal(slotReceipts.at(-1).pageResult, 'success');
+ assert(!('paid' in slotReceipts.at(-1)));
  slots.onResp(response(wx.SendAuthResp, stillActiveAuth, { state: stillActiveAuth.state, code: 'synthetic-code' }));
  assert.equal(slotReceipts.at(-1).requestId, 'after-transfers-auth');
- const ClearFailure = fresh(); let clearFails = true;
- const clearFailure = ClearFailure.configure('host-app-id', mainContext, { load: () => null, save: value => { if (value === null && clearFails) throw Error('disk clear failed'); } });
- assert.equal(await clearFailure.openMerchantTransfer('accepted-clear-failure', 'merchant', 'app', 'package'), 'requested');
- assert.equal(await clearFailure.authorize('blocked-unsafe-journal'), 'busy');
- clearFails = false; assert.equal(clearFailure.cancel('accepted-clear-failure'), true);
  const slotModuleExports = { exports: {} };
  vm.runInNewContext(moduleOutput, { exports: slotModuleExports.exports, require: key => key === './WechatClient' ? { WechatClient: Slots } : render, Set });
- const slotPage = new slotModuleExports.exports.WechatModule(), moduleSubmissions = [];
- slotPage.call('listen', '{}', () => {});
+ const delayedPage = new slotModuleExports.exports.WechatModule(), delayedControls = [], delayedStatuses = [];
+ delayedPage.call('listen', '{}', value => delayedControls.push(value));
+ accepted = 'delay'; delayedPage.call('authorize', JSON.stringify({ requestId: 'module-slow-old' }), value => delayedStatuses.push(value.status));
+ const delayedPageAck = pendingSend;
+ accepted = true; delayedPage.call('authorize', JSON.stringify({ requestId: 'module-slow-new' }), value => delayedStatuses.push(value.status));
+ await flush(); assert.deepEqual(delayedStatuses, ['requested']); assert.equal(delayedControls.length, 1);
+ assert.equal(delayedControls[0].requestId, 'module-slow-old'); assert.equal(delayedControls[0].status, 'cancelled');
+ assert.equal(delayedPage.ids.has('module-slow-old'), false); assert.equal(delayedPage.submitting.has('module-slow-old'), false);
+ delayedPageAck(true); await flush(); assert.deepEqual(delayedStatuses, ['requested']); assert.equal(delayedControls.length, 1);
+ delayedPage.onDestroy();
+ const slotPage = new slotModuleExports.exports.WechatModule(), moduleSubmissions = [], moduleControls = [];
+ slotPage.call('listen', '{}', value => moduleControls.push(value));
  for (let index = 0; index < 66; index++) {
    slotPage.call('transfer', JSON.stringify({ requestId: `module-retry-${index}`, merchantId: 'merchant', appId: 'app', packageValue: 'package' }), value => moduleSubmissions.push(value.status));
    await flush();
  }
  assert.equal(moduleSubmissions.length, 66); assert(moduleSubmissions.every(value => value === 'requested'));
- assert(slotPage.ids.size <= 65, '无回执连续操作不能无限累积 Renderer 归属');
- assert.equal(slots.acceptedRequests.size, 64, '只保留有界且不阻塞发送的回执关联');
- slotPage.onDestroy(); assert.equal(slots.acceptedRequests.size, 0);
+ assert.equal(moduleControls.length, 65); assert(moduleControls.every(value => value.status === 'cancelled' && !('errorCode' in value)));
+ assert.equal(slotPage.ids.size, 1); assert.equal(slots.currentRequests.size, 1);
+ slotPage.onDestroy(); assert.equal(slots.currentRequests.size, 0);
 
  const WebSlots = fresh(), webpageSlots = WebSlots.configure('web-app', { cacheDir: '/tmp' });
- const webpageReceipts = []; webpageSlots.addListener(r => webpageReceipts.push(r));
- const webpageRequests = [];
+ const webpageReceipts = [], webpageRequests = [];
+ webpageSlots.addListener(r => webpageReceipts.push(r));
  for (let index = 0; index < 66; index++) {
    assert.equal(await webpageSlots.shareWebPage(`retry-web-${index}`, 'https://example.com', '', '', 'aA==', 'session'), 'requested');
    webpageRequests.push(sent.at(-1));
  }
- assert.equal(webpageSlots.acceptedRequests.size, 64);
- assert.equal(webpageSlots.canResume('retry-web-0'), false);
- assert.equal(await webpageSlots.authorize('auth-after-web'), 'requested');
- const webpageAuth = sent.at(-1);
- webpageSlots.onResp(response(wx.SendAuthResp, webpageRequests[64], { state: webpageAuth.state, code: 'wrong-kind' }));
- assert.equal(webpageReceipts.length, 0);
- webpageSlots.onResp(response(wx.SendMessageToWXResp, webpageRequests[64]));
- assert.equal(webpageReceipts.at(-1).requestId, 'retry-web-64');
- assert.equal(webpageSlots.cancel('retry-web-65'), true);
- webpageSlots.onResp(response(wx.SendMessageToWXResp, webpageRequests[65]));
- assert.equal(webpageReceipts.length, 1);
+ assert.equal(webpageSlots.currentRequests.size, 1); assert.equal(webpageSlots.canResume('retry-web-64'), false);
+ assert.equal(await webpageSlots.authorize('auth-after-web'), 'requested'); const webpageAuth = sent.at(-1);
+ webpageSlots.onResp(response(wx.SendAuthResp, webpageRequests[65], { state: webpageAuth.state, code: 'wrong-kind' }));
+ webpageSlots.onResp(response(wx.SendMessageToWXResp, webpageRequests[64])); assert.equal(webpageReceipts.length, 0);
+ webpageSlots.onResp(response(wx.SendMessageToWXResp, webpageRequests[65])); assert.equal(webpageReceipts.at(-1).requestId, 'retry-web-65');
  assert.equal(webpageSlots.canResume('auth-after-web'), true);
  webpageSlots.onResp(response(wx.SendAuthResp, webpageAuth, { state: webpageAuth.state, code: 'auth-code' }));
  assert.equal(webpageReceipts.at(-1).requestId, 'auth-after-web');
- console.log('OHOS webpages: 66 retries without final receipt, bounded tracking, exact kind/transaction, cancel and new auth isolation passed');
- console.log('OHOS transfer repeat launch without receipt, exact late/cancelled receipt attribution and failed journal clear passed');
- console.log('OHOS request context: singleton SDK, current Ability, async image owner snapshot passed');
- console.log('OHOS image repeat submission, no journal/resume/business receipt, busy until SDK ack, early/late receipt isolation and in-flight file retention passed');
- console.log('OHOS OAuth state, transaction, duplicate/late callbacks, concurrency, raw transfer encoding, URL validation and temporary file lifecycle passed');
+ // Module负责懒配置和监听恢复；provider不能把注册/取消变成SDK初始化入口。
+ const Lazy = fresh(), lazyExports = { exports: {} };
+ vm.runInNewContext(moduleOutput, { exports: lazyExports.exports, require: key => key === './WechatClient' ? { WechatClient: Lazy } : render, Set });
+ const beforeLazySends = sent.length, lazyContexts = [], lazyEvents = [], lazyStatuses = [];
+ let configureFails = true, lazyContext = { cacheDir: '/lazy-main' };
+ const lazy = new lazyExports.exports.WechatModule(() => {
+   lazyContexts.push(lazyContext);
+   if (configureFails) throw Error('configuration unavailable');
+   return Lazy.configure('lazy-app', lazyContext);
+ });
+ assert.equal(lazyContexts.length, 0);
+ const submitLazy = (method, id) => lazy.call(method, JSON.stringify({ requestId: id, merchantId: 'merchant', appId: 'app', packageValue: 'package' }), value => lazyStatuses.push(value.status));
+ submitLazy('authorize', 'before-listen'); assert.equal(lazyStatuses.at(-1), 'unsupported');
+ assert.equal(lazyContexts.length, 0); assert.equal(sent.length, beforeLazySends);
+ lazy.call('listen', '{}', value => lazyEvents.push(value)); assert.equal(lazyEvents.at(-1).status, 'failed');
+ submitLazy('transfer', 'configuration-still-fails'); assert.equal(lazyStatuses.at(-1), 'failed');
+ const beforeInvalidConfigure = lazyContexts.length;
+ lazy.call('transfer', '{broken', value => assert.equal(value.status, 'invalid_content'));
+ submitLazy('unknown-method', 'unknown'); submitLazy('cancel', 'not-owned'); lazy.call('unlisten', '{}', null);
+ assert.equal(lazyContexts.length, beforeInvalidConfigure); assert.equal(sent.length, beforeLazySends);
+ configureFails = false; submitLazy('authorize', 'after-unlisten'); assert.equal(lazyStatuses.at(-1), 'unsupported');
+ assert.equal(lazyContexts.length, beforeInvalidConfigure, 'unlisten revokes deferred initialization');
+ configureFails = true; lazy.call('listen', '{}', value => lazyEvents.push(value)); configureFails = false;
+ submitLazy('authorize', 'lazy-auth'); await flush(); assert.equal(lazyStatuses.at(-1), 'requested');
+ const lazyAuth = sent.at(-1), lazyClient = Lazy.current();
+ lazyClient.onResp(response(wx.SendAuthResp, lazyAuth, { state: lazyAuth.state, code: 'lazy-code' }));
+ assert.equal(lazyEvents.at(-1).requestId, 'lazy-auth');
+ lazyContext = { cacheDir: '/lazy-child' }; submitLazy('transfer', 'lazy-transfer'); await flush();
+ assert.equal(sentContexts.at(-1), lazyContext, 'every request refreshes the requesting Ability context');
+ configureFails = true; const beforeCancelConfigure = lazyContexts.length;
+ submitLazy('cancel', 'lazy-transfer'); assert.equal(lazyStatuses.at(-1), 'cancelled');
+ assert.equal(lazyContexts.length, beforeCancelConfigure, 'cancel uses its existing client even when provider is unavailable');
+ configureFails = false; submitLazy('authorize', 'before-listener-replacement'); await flush();
+ const beforeReplacementReq = sent.at(-1); configureFails = true;
+ const replacementEvents = [];
+ lazy.call('listen', '{}', value => replacementEvents.push(value)); assert.equal(replacementEvents.at(-1).status, 'failed');
+ lazyClient.onResp(response(wx.SendAuthResp, beforeReplacementReq, { state: beforeReplacementReq.state, code: 'replacement-pending-code' }));
+ assert.equal(replacementEvents.at(-1).requestId, 'before-listener-replacement', 'failed configuration retains the latest desired callback');
+ assert.equal(lazyEvents.at(-1).requestId, 'lazy-auth', 'replaced callbacks must stop receiving in-flight receipts');
+ configureFails = false; submitLazy('authorize', 'lazy-replacement'); await flush(); const replacementReq = sent.at(-1);
+ lazyClient.onResp(response(wx.SendAuthResp, replacementReq, { state: replacementReq.state, code: 'replacement-code' }));
+ assert.equal(replacementEvents.at(-1).requestId, 'lazy-replacement'); assert.equal(lazyEvents.at(-1).requestId, 'lazy-auth');
+ lazy.onDestroy(); const afterDestroyConfigure = lazyContexts.length;
+ submitLazy('transfer', 'after-destroy'); assert.equal(lazyStatuses.at(-1), 'cancelled'); assert.equal(lazyContexts.length, afterDestroyConfigure);
+
+ // 默认current()模式同样先listen；稍后出现client后可恢复，不引入第二份配置。
+ const Default = fresh(), defaultExports = { exports: {} };
+ vm.runInNewContext(moduleOutput, { exports: defaultExports.exports, require: key => key === './WechatClient' ? { WechatClient: Default } : render, Set });
+ const defaultModule = new defaultExports.exports.WechatModule(), defaultEvents = [], defaultStatuses = [];
+ defaultModule.call('authorize', JSON.stringify({ requestId: 'default-before-listen' }), value => defaultStatuses.push(value.status));
+ assert.equal(defaultStatuses.at(-1), 'unsupported');
+ defaultModule.call('listen', '{}', value => defaultEvents.push(value)); assert.equal(defaultEvents.at(-1).status, 'unsupported');
+ const defaultClient = Default.configure('default-app', mainContext);
+ defaultModule.call('authorize', JSON.stringify({ requestId: 'default-recovered' }), value => defaultStatuses.push(value.status));
+ await flush(); assert.equal(defaultStatuses.at(-1), 'requested'); const defaultReq = sent.at(-1);
+ defaultClient.onResp(response(wx.SendAuthResp, defaultReq, { state: defaultReq.state, code: 'default-code' }));
+ assert.equal(defaultEvents.at(-1).requestId, 'default-recovered'); defaultModule.onDestroy();
+
+ // 失败listen必须保留原restoredRequestId；恢复可同步回放并销毁，后续请求不能越过释放提交。
+ const Recovery = fresh(), recoveryClient = Recovery.configure('recovery-app', mainContext), recoveryExports = { exports: {} };
+ vm.runInNewContext(moduleOutput, { exports: recoveryExports.exports, require: key => key === './WechatClient' ? { WechatClient: Recovery } : render, Set });
+ assert.equal(await recoveryClient.authorize('restored-during-recovery'), 'requested'); const recoveryReq = sent.at(-1);
+ recoveryClient.onResp(response(wx.SendAuthResp, recoveryReq, { state: recoveryReq.state, code: 'buffered-recovery-code' }));
+ let recoveryFails = true;
+ const recoveryModule = new recoveryExports.exports.WechatModule(() => { if (recoveryFails) throw Error('recovery unavailable'); return recoveryClient; });
+ const recoveredEvents = [], recoveryStatuses = [];
+ recoveryModule.call('listen', JSON.stringify({ restoredRequestId: 'restored-during-recovery' }), value => {
+   recoveredEvents.push(value);
+   if (value.requestId === 'restored-during-recovery') recoveryModule.onDestroy();
+ });
+ assert.equal(recoveredEvents.at(-1).status, 'failed'); recoveryFails = false;
+ const beforeRecoverySend = sent.length;
+ recoveryModule.call('transfer', JSON.stringify({ requestId: 'cannot-cross-destroy', merchantId: 'merchant', appId: 'app', packageValue: 'package' }), value => recoveryStatuses.push(value.status));
+ assert.equal(recoveredEvents.at(-1).requestId, 'restored-during-recovery'); assert.equal(recoveryStatuses.at(-1), 'cancelled');
+ assert.equal(sent.length, beforeRecoverySend); assert.equal(recoveryModule.baseDestroyed, true);
+ // OAuth清理失败仍逐类释放同页分享/转账，最后抛原错；移owner和基类销毁始终执行。
+ const ReleaseAll = fresh(), releaseAllExports = { exports: {} }; let releaseAllJournal = null, releaseAllFails = false;
+ const releaseAllError = Error('release-all journal unavailable');
+ const releaseAllClient = ReleaseAll.configure('release-all-app', mainContext, {
+   load: () => null,
+   save: value => { if (value === null && releaseAllFails) throw releaseAllError; releaseAllJournal = value; }
+ });
+ vm.runInNewContext(moduleOutput, { exports: releaseAllExports.exports, require: key => key === './WechatClient' ? { WechatClient: ReleaseAll } : render, Set });
+ const releaseAllPage = new releaseAllExports.exports.WechatModule(), releaseAllEvents = [];
+ releaseAllPage.call('listen', '{}', value => releaseAllEvents.push(value));
+ releaseAllPage.call('authorize', JSON.stringify({ requestId: 'release-all-auth' }), null); await flush(); const releaseAllAuth = sent.at(-1);
+ releaseAllPage.call('webpage', JSON.stringify({ requestId: 'release-all-share', url: 'https://example.com', title: '', description: '', thumbnail: 'aA==', scene: 'session' }), null);
+ await flush(); const releaseAllShare = sent.at(-1);
+ releaseAllPage.call('transfer', JSON.stringify({ requestId: 'release-all-transfer', merchantId: 'merchant', appId: 'app', packageValue: 'package' }), null);
+ await flush(); const releaseAllTransfer = sent.at(-1);
+ assert.equal(releaseAllPage.ids.size, 3); releaseAllFails = true;
+ assert.throws(() => releaseAllPage.onDestroy(), error => error === releaseAllError);
+ assert.equal(releaseAllPage.baseDestroyed, true); assert.equal(releaseAllPage.ids.size, 0);
+ assert.equal(releaseAllJournal.requestId, 'release-all-auth'); assert.equal(releaseAllClient.canResume('release-all-auth'), true);
+ assert.equal(releaseAllClient.canResume('release-all-share'), false); assert.equal(releaseAllClient.canResume('release-all-transfer'), false);
+ releaseAllClient.onResp(response(wx.SendMessageToWXResp, releaseAllShare));
+ releaseAllClient.onResp(response(wx.OpenBusinessViewResp, releaseAllTransfer, { businessType: 'requestMerchantTransfer' }));
+ releaseAllFails = false;
+ releaseAllClient.onResp(response(wx.SendAuthResp, releaseAllAuth, { state: releaseAllAuth.state, code: 'released-owner-code' }));
+ assert.equal(releaseAllEvents.length, 0, 'destroyed listener cannot receive any late receipt');
+ const releaseAllRestored = []; releaseAllClient.addListener(value => releaseAllRestored.push(value));
+ assert.equal(releaseAllRestored.length, 1); assert.equal(releaseAllRestored[0].requestId, 'release-all-auth'); assert.equal(releaseAllJournal, null);
+ console.log('OHOS lazy Module: deferred configuration, retry/listener replacement, cleanup without provider, context refresh, default current and restored-ID synchronous disposal passed');
+ console.log('OHOS per-kind current rounds: 66 transfer/webpage retries, stale receipt isolation, separate cancellation controls and bounded page ownership passed');
+ console.log('OHOS request context, OAuth state, SDK kind/transaction, validation and image file lifecycle passed');
 })().catch(e => { console.error(e); process.exitCode = 1; });

@@ -1,141 +1,80 @@
 import Foundation
 let s = WechatSession()
-assert(s.begin("one", state: "secure-state") == nil)
-assert(s.begin("two") == "busy")
-assert(s.consumeAuthorization("forged") == nil)
-assert(s.consumeAuthorization(nil) == nil)
-assert(s.submitted("one", accepted: true))
-assert(s.consumeAuthorization("secure-state") == "one")
-assert(s.consumeAuthorization("secure-state") == nil)
-assert(s.begin("one") == "invalid_content")
-assert(s.begin("two", state: "next-state") == nil)
-assert(!s.cancel("one"))
-assert(s.cancel("two"))
-assert(s.begin("three", state: "third-state") == nil)
-assert(!s.submitted("two", accepted: false))
-assert(s.consumeAuthorization("next-state") == nil)
-assert(s.consumeAuthorization("third-state") == "three")
-print("Swift OAuth state, concurrency, duplicate and late callback checks passed")
+var replaced = [String]()
+assert(s.begin("auth-one", state: "state-one") == nil)
+assert(s.begin("share-one", sharing: .tracked) == nil)
+assert(s.begin("transfer-one") == nil)
+assert(s.begin("auth-two", state: "state-two", onReplaced: { replaced.append($0) }) == nil)
+assert(s.begin("share-two", sharing: .tracked, onReplaced: { replaced.append($0) }) == nil)
+assert(s.begin("transfer-two", onReplaced: { replaced.append($0) }) == nil)
+assert(replaced == ["auth-one", "share-one", "transfer-one"])
+for id in replaced { assert(!s.cancel(id) && !s.submitted(id, accepted: true)) }
+assert(s.consumeAuthorization("forged") == nil && s.consumeAuthorization(nil) == nil)
+assert(s.consumeAuthorization("state-one") == nil && s.consumeAuthorization("state-two") == "auth-two")
+assert(!s.submitted("auth-two", accepted: true))
+assert(s.dispatchedShare("share-two") && s.consumeShare() == "share-two")
+assert(!s.submitted("share-two", accepted: true))
+assert(s.submitted("transfer-two", accepted: true) && !s.isCurrent("transfer-two"))
+assert(s.begin("auth-one", state: "reuse") == "invalid_content")
+print("Swift three current kinds, replacement, stale cancel/ack/state and early receipt cleanup passed")
 
 final class Store: WechatAuthorizationStore {
     var saved: WechatPendingAuthorization?
+    var failSave = false
+    var failClear = false
     func load() -> WechatPendingAuthorization? { saved }
-    func save(_ request: WechatPendingAuthorization?) { saved = request }
+    func save(_ request: WechatPendingAuthorization?) throws {
+        if request == nil ? failClear : failSave { throw NSError(domain: "storage", code: 1) }
+        saved = request
+    }
 }
 let store = Store()
 assert(WechatSession(store: store).begin("cold", state: "random-state") == nil)
 let restored = WechatSession(store: store)
-assert(restored.begin("new") == "busy")
-assert(restored.consumeAuthorization("forged") == nil)
-assert(restored.consumeAuthorization(nil) == nil)
-assert(restored.consumeAuthorization("random-state") == "cold")
-assert(store.saved == nil)
+assert(restored.canResume("cold") && !restored.isSubmitting("cold"))
+store.failSave = true
+assert(restored.begin("failed-replacement", state: "next-state") == "failed")
+assert(store.saved?.requestID == "cold" && restored.isCurrent("cold"))
+store.failSave = false; store.failClear = true
+assert(restored.consumeAuthorization("random-state") == nil && !restored.cancel("cold"))
+assert(store.saved?.requestID == "cold" && restored.isCurrent("cold"))
+store.failClear = false
+assert(restored.consumeAuthorization("random-state") == "cold" && store.saved == nil)
 assert(WechatSession(store: store).consumeAuthorization("random-state") == nil)
-assert(restored.begin("cancelled", state: "cancel-state") == nil)
-assert(restored.cancel("cancelled"))
+assert(restored.begin("cancel", state: "cancel-state") == nil && restored.cancel("cancel"))
 assert(WechatSession(store: store).consumeAuthorization("cancel-state") == nil)
-print("Swift trusted OAuth journal process recreation and cancellation checks passed")
-
 final class UnreadableStore: WechatAuthorizationStore {
     func load() throws -> WechatPendingAuthorization? { throw NSError(domain: "storage", code: 1) }
     func save(_ request: WechatPendingAuthorization?) { assertionFailure("must not overwrite unreadable journal") }
 }
-assert(WechatSession(store: UnreadableStore()).begin("blocked", state: "state") == "failed")
-
-final class FailingClearStore: WechatAuthorizationStore {
-    var saved: WechatPendingAuthorization?
-    var failClear = false
-    func load() -> WechatPendingAuthorization? { saved }
-    func save(_ request: WechatPendingAuthorization?) throws {
-        if request == nil && failClear { throw NSError(domain: "storage", code: 2) }
-        saved = request
-    }
-}
-let failingStore = FailingClearStore()
-let failedCancel = WechatSession(store: failingStore)
-assert(failedCancel.begin("late-after-failed-cancel", state: "late-state") == nil)
-assert(failedCancel.submitted("late-after-failed-cancel", accepted: true))
-failingStore.failClear = true
-assert(!failedCancel.cancel("unknown"))
-assert(!failedCancel.cancel("late-after-failed-cancel"))
-assert(failingStore.saved?.requestID == "late-after-failed-cancel")
-assert(failedCancel.begin("new", state: "new-state") == "busy")
-failingStore.failClear = false
-assert(failedCancel.consumeAuthorization("late-state") == "late-after-failed-cancel")
-assert(!failedCancel.cancel("late-after-failed-cancel"))
-assert(failedCancel.begin("cancel-retry", state: "retry-state") == nil)
-failingStore.failClear = true
-assert(!failedCancel.cancel("cancel-retry"))
-failingStore.failClear = false
-assert(failedCancel.cancel("cancel-retry"))
-assert(failingStore.saved == nil)
-assert(failedCancel.consumeAuthorization("retry-state") == nil)
-print("Swift failed cancel retains trusted pending, late receipt, unknown/completed ID and retry checks passed")
+let unreadable = WechatSession(store: UnreadableStore())
+assert(unreadable.begin("blocked", state: "state") == "failed")
+assert(unreadable.begin("independent-transfer") == nil)
+assert(unreadable.begin("independent-share", sharing: .tracked) == nil)
+print("Swift atomic OAuth replacement, trusted restoration, failed clear/cancel retry and kind isolation passed")
 
 let shares = WechatSession()
-assert(shares.begin("share-one", sharing: .tracked) == nil)
-assert(shares.begin("share-overlap", sharing: .tracked) == "busy")
-shares.dispatchedShare("share-one")
-assert(shares.submitted("share-one", accepted: true))
-assert(shares.begin("auth-with-share", state: "auth-state") == nil)
-assert(shares.consumeShare() == "share-one")
-assert(shares.submitted("auth-with-share", accepted: true))
-assert(shares.consumeAuthorization("auth-state") == "auth-with-share")
-assert(shares.consumeShare() == nil)
-assert(shares.begin("share-two", sharing: .tracked) == nil)
-shares.dispatchedShare("share-two")
-assert(shares.submitted("share-two", accepted: false))
-assert(shares.begin("share-before-send-cancel", sharing: .tracked) == nil)
-assert(shares.cancel("share-before-send-cancel"))
-assert(shares.begin("share-cancelled", sharing: .tracked) == nil)
-shares.dispatchedShare("share-cancelled")
-assert(shares.cancel("share-cancelled"))
-assert(!shares.canCorrelateShareReceipt)
-assert(shares.begin("new-after-cancel", sharing: .tracked) == nil)
-assert(shares.dispatchedShare("new-after-cancel"))
-assert(shares.consumeShare() == nil)
-assert(!shares.submitted("share-cancelled", accepted: true))
-assert(shares.submitted("new-after-cancel", accepted: true))
-let acceptedThenCancelled = WechatSession()
-assert(acceptedThenCancelled.begin("accepted-cancel", sharing: .tracked) == nil)
-acceptedThenCancelled.dispatchedShare("accepted-cancel")
-assert(acceptedThenCancelled.submitted("accepted-cancel", accepted: true))
-assert(acceptedThenCancelled.cancel("accepted-cancel"))
-assert(acceptedThenCancelled.consumeShare() == nil)
-assert(!acceptedThenCancelled.canCorrelateShareReceipt)
-assert(acceptedThenCancelled.begin("accepted-new", sharing: .submissionOnly) == nil)
-assert(acceptedThenCancelled.dispatchedShare("accepted-new"))
-assert(acceptedThenCancelled.submitted("accepted-new", accepted: true))
-assert(shares.begin("auth-after-cancel", state: "state") == nil)
-assert(shares.consumeAuthorization("state") == "auth-after-cancel")
-let early = WechatSession()
-assert(early.begin("early", sharing: .tracked) == nil)
-early.dispatchedShare("early")
-assert(early.consumeShare() == "early")
-assert(early.submitted("early", accepted: true))
-assert(early.begin("next", sharing: .tracked) == nil)
+assert(shares.begin("first", sharing: .tracked) == nil && shares.dispatchedShare("first"))
+assert(shares.begin("second", sharing: .tracked) == nil && shares.dispatchedShare("second"))
+assert(!shares.canCorrelateShareReceipt && shares.consumeShare() == nil)
+assert(shares.submitted("second", accepted: true) && !shares.isCurrent("second"))
+let unsent = WechatSession()
+assert(unsent.begin("unsent", sharing: .tracked) == nil && unsent.consumeShare() == nil)
+assert(unsent.cancel("unsent") && unsent.canCorrelateShareReceipt)
+assert(unsent.begin("image-refused", sharing: .submissionOnly) == nil && unsent.dispatchedShare("image-refused"))
+assert(unsent.submitted("image-refused", accepted: false) && unsent.canCorrelateShareReceipt)
+assert(unsent.begin("image-early", sharing: .submissionOnly) == nil && unsent.dispatchedShare("image-early"))
+assert(unsent.consumeShare() == nil && !unsent.canCorrelateShareReceipt)
+assert(unsent.submitted("image-early", accepted: false) && !unsent.canCorrelateShareReceipt)
+let cancelled = WechatSession()
+assert(cancelled.begin("web", sharing: .tracked) == nil && cancelled.dispatchedShare("web"))
+assert(cancelled.cancel("web") && !cancelled.canCorrelateShareReceipt)
+assert(cancelled.begin("new", sharing: .tracked) == nil && cancelled.dispatchedShare("new"))
+assert(cancelled.consumeShare() == nil)
 assert(wechatText(String(repeating: "中", count: 256), characters: 256, bytes: 512) == String(repeating: "中", count: 170))
-assert(wechatText(String(repeating: "文", count: 512), characters: 512, bytes: 1024).utf8.count == 1023)
-assert(wechatText(String(repeating: "a", count: 300), characters: 256, bytes: 512).count == 256)
+assert(wechatText("a😀", characters: 2, bytes: 512) == "a")
 assert(!wechatText(String(repeating: "👨‍👩‍👧‍👦", count: 256), characters: 256, bytes: 512).contains("�"))
-print("Swift single-pending candidate, BUSY, normal retry, cancellation attribution downgrade, early receipt and UTF-8 policy checks passed")
-
-
-let neverDispatched = WechatSession()
-assert(neverDispatched.begin("not-dispatched", sharing: .tracked) == nil)
-assert(neverDispatched.consumeShare() == nil)
-assert(neverDispatched.begin("cannot-overtake", state: "state") == "busy")
-assert(neverDispatched.cancel("not-dispatched"))
-assert(neverDispatched.begin("retry-safe", sharing: .tracked) == nil)
-neverDispatched.dispatchedShare("retry-safe")
-assert(neverDispatched.consumeShare() == "retry-safe")
-let invalidStore = Store()
-invalidStore.saved = WechatPendingAuthorization(requestID: "id", state: String(repeating: "s", count: 257))
-let invalidRestored = WechatSession(store: invalidStore)
-assert(invalidRestored.consumeAuthorization(invalidStore.saved?.state) == nil)
-assert(invalidRestored.begin("fresh", state: "fresh-state") == nil)
-assert(invalidRestored.consumeAuthorization("fresh-state") == "fresh")
-print("Swift pre-dispatch receipt rejection and invalid restoration admission passed")
+print("Swift share candidate downgrade, early image receipt, refusal/cancel and UTF-8 limits passed")
 
 // String.count 的组合字符不能扩大与 Kotlin/ArkTS 相同的 UTF-16 公共上限。
 for id in [String(repeating: "😀", count: 65), String(repeating: "e\u{0301}", count: 65)] {

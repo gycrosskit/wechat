@@ -6,32 +6,41 @@ export class WechatModule extends KuiklyRenderBaseModule {
   /** Kuikly 原生注册名。 */
   static readonly MODULE_NAME: string = 'GycWechat';
   private listener: KuiklyRenderCallback | null = null;
+  private readonly clientProvider: (() => WechatClient | null) | null;
+  private client: WechatClient | null = null;
+  private listenRequested: boolean = false;
+  private listenerAttached: boolean = false;
+  private restoredRequestId: string = '';
   private destroyed: boolean = false;
   private ids: Set<string> = new Set();
   private submitting: Map<string, Args> = new Map();
   private response = (receipt: WechatReceipt): void => { if (!this.destroyed && this.ids.delete(receipt.requestId)) { this.listener?.(receipt); } };
+  private submitted = (id: string, status: WechatStatus): void => {
+    if (this.destroyed || !this.ids.delete(id)) { return; }
+    this.submitting.delete(id);
+    this.listener?.({ requestId: id, status });
+  };
+  /** provider 仅在显式 listen 及其后续请求调用；构造和取消不初始化 SDK。 */
+  constructor(clientProvider: (() => WechatClient | null) | null = null) { super(); this.clientProvider = clientProvider; }
   syncMode(): boolean { return false; }
   /** 页面线程异步入口；listen 只恢复可信 ID，cancel 清除失败保留原 owner。 */
   call(method: string, params: KRAny, callback: KuiklyRenderCallback | null): KRAny {
-    const client = WechatClient.current();
-    if (this.destroyed || !client) { callback?.({ status: 'unsupported' }); return null; }
-    if (method === 'listen') {
-      let restored = '';
-      try { restored = (JSON.parse(typeof params === 'string' ? params : '{}') as Args).restoredRequestId; } catch (_) {}
-      if (typeof restored === 'string' && client.canResume(restored, this.response)) { this.ids.add(restored); }
-      this.listener = callback; client.addListener(this.response, this.ids); return null;
-    }
+    if (this.destroyed) { callback?.({ status: 'cancelled' }); return null; }
     if (method === 'unlisten') { this.release(); return null; }
-    this.ids.forEach((id: string) => {
-      if (!this.submitting.has(id) && !client.canResume(id, this.response)) this.ids.delete(id);
-    });
+    if (method === 'listen') {
+      this.listenRequested = true; this.listenerAttached = false; this.listener = callback;
+      this.restoredRequestId = '';
+      try { this.restoredRequestId = (JSON.parse(typeof params === 'string' ? params : '{}') as Args)?.restoredRequestId ?? ''; } catch (_) {}
+      this.configure(callback); return null;
+    }
     let args: Args;
     try { args = JSON.parse(typeof params === 'string' ? params : '{}') as Args; } catch (_) { callback?.({ status: 'invalid_content' }); return null; }
     if (!args || typeof args.requestId !== 'string') { callback?.({ status: 'invalid_content' }); return null; }
     if (method === 'cancel') {
+      const client = this.client ?? WechatClient.current();
       if (!this.ids.has(args.requestId)) { callback?.({ status: 'no_pending' }); return null; }
       try {
-        const cancelled = client.cancel(args.requestId);
+        const cancelled = client?.cancel(args.requestId) ?? false;
         this.ids.delete(args.requestId);
         this.submitting.delete(args.requestId);
         callback?.({ status: cancelled ? 'cancelled' : 'no_pending' });
@@ -41,6 +50,14 @@ export class WechatModule extends KuiklyRenderBaseModule {
       }
       return null;
     }
+    if (method !== 'authorize' && method !== 'image' && method !== 'webpage' && method !== 'transfer') { callback?.({ status: 'unsupported' }); return null; }
+    if (!this.listenRequested) { callback?.({ status: 'unsupported' }); return null; }
+    const client = this.configure(callback); if (!client) { return null; }
+    // 恢复监听可同步交付回执，宿主可能在回调内销毁或释放本页。
+    if (this.destroyed || !this.listenRequested || !this.listenerAttached) { callback?.({ status: 'cancelled' }); return null; }
+    this.ids.forEach((id: string) => {
+      if (!this.submitting.has(id) && !client.canResume(id, this.response)) this.ids.delete(id);
+    });
     if (this.ids.has(args.requestId) || this.submitting.has(args.requestId)) { callback?.({ status: 'busy' }); return null; }
     this.ids.add(args.requestId);
     // 每次解析得到的参数对象是独有 token，取消后同 ID 重入不能被旧 Promise 消费。
@@ -61,6 +78,19 @@ export class WechatModule extends KuiklyRenderBaseModule {
     });
     return null;
   }
+  private configure(callback: KuiklyRenderCallback | null): WechatClient | null {
+    let client: WechatClient | null;
+    try { client = this.clientProvider ? this.clientProvider() : WechatClient.current(); }
+    catch (_) { callback?.({ status: 'failed' }); return null; }
+    if (!client) { callback?.({ status: 'unsupported' }); return null; }
+    this.client = client;
+    if (!this.listenerAttached) {
+      if (typeof this.restoredRequestId === 'string' && client.canResume(this.restoredRequestId, this.response)) { this.ids.add(this.restoredRequestId); }
+      this.listenerAttached = true;
+      client.addListener(this.response, this.ids, this.submitted);
+    }
+    return client;
+  }
   private async perform(client: WechatClient, method: string, args: Args): Promise<WechatStatus> {
     if (method === 'authorize') { return client.authorize(args.requestId); }
     if (method === 'image') { return client.shareImage(args.requestId, args.data, args.scene, args.recipientId, args.senderOpenId); }
@@ -69,12 +99,18 @@ export class WechatModule extends KuiklyRenderBaseModule {
     return 'unsupported';
   }
   private release(): void {
-    const client = WechatClient.current();
+    const client = this.client ?? WechatClient.current();
     const ids = Array.from(this.ids);
+    this.listenRequested = false; this.listenerAttached = false; this.restoredRequestId = '';
     this.listener = null; this.submitting.clear();
-    // 清除日志期间保留归属，避免重入页面抢走后被旧 owner 取消。
-    try { ids.forEach((id: string) => client?.cancel(id)); }
-    finally { this.ids.clear(); client?.removeListener(this.response); }
+    // 单类日志失败不能阻止释放其他类型；全部尝试后保留首个异常。
+    let failure: Error | null = null;
+    try {
+      ids.forEach((id: string) => {
+        try { client?.cancel(id); } catch (error) { if (!failure) { failure = error as Error; } }
+      });
+    } finally { this.ids.clear(); client?.removeListener(this.response); }
+    if (failure) { throw failure as Error; }
   }
   onDestroy(): void {
     this.destroyed = true;

@@ -77,6 +77,13 @@ class AndroidWechatClientTest {
         assertEquals(1, WechatFactoryShadow.sent.size)
     }
 
+    @Test fun unreadableJournalReportsFailureWithoutOpeningWechat() {
+        store.failLoad = true
+        client.authorize("unreadable")
+        assertEquals(listOf("unreadable" to WechatStatus.FAILED), listener.submitted)
+        assertTrue(WechatFactoryShadow.sent.isEmpty())
+    }
+
     @Test fun cancelledQueuedSharingAndTransferNeverReachSdk() {
         background {
             client.shareImage("image", image(), WechatScene.SESSION)
@@ -117,28 +124,29 @@ class AndroidWechatClientTest {
         val submitted = mutableListOf<String>()
         val receipts = mutableListOf<String>()
         module.call("listen", "{}") { receipts += it as String }
-        repeat(66) { index ->
+        repeat(3) { index ->
             val params = JSONObject().put("requestId", "retry-$index").put("merchantId", "merchant")
                 .put("appId", "app").put("packageValue", "package")
             module.call("transfer", params.toString()) { submitted += JSONObject(it as String).getString("status") }
         }
-        assertEquals(66, submitted.size)
+        assertEquals(3, submitted.size)
         assertTrue(submitted.all { it == "requested" })
         assertFalse(client.hasModuleOwner("retry-0"))
-        assertTrue(client.hasModuleOwner("retry-65"))
+        assertTrue(client.hasModuleOwner("retry-2"))
         WechatFactoryShadow.respond(WXOpenBusinessView.Resp().apply {
             transaction = WechatFactoryShadow.sent.first().transaction; businessType = "requestMerchantTransfer"
         })
-        assertTrue(receipts.isEmpty())
+        assertEquals(listOf("retry-0", "retry-1"), receipts.map { JSONObject(it).getString("requestId") })
+        assertTrue(receipts.all { JSONObject(it).getString("status") == "cancelled" })
         module.onDestroy()
-        assertFalse(client.hasPendingRequest("retry-65"))
+        assertFalse(client.hasPendingRequest("retry-2"))
     }
 
     @Test fun webpageWithoutReceiptAllowsRetryAndOldReceiptCannotFinishNewAuthorization() {
         client.handleIntent(Intent())
         repeat(2) { index ->
             client.shareWebPage("web-$index", "https://example.com", "title", "", image(), WechatScene.SESSION)
-            awaitSubmission(index + 1)
+            awaitSubmission(if (index == 0) 1 else 3)
             assertEquals("web-$index" to WechatStatus.REQUESTED, listener.submitted.last())
         }
         val first = WechatFactoryShadow.sent.first()
@@ -146,11 +154,10 @@ class AndroidWechatClientTest {
         assertNull(store.saved)
         client.authorize("auth-after-web")
         WechatFactoryShadow.respond(SendMessageToWX.Resp().apply { transaction = first.transaction })
-        assertEquals("web-0", listener.receipts.single().requestId)
-        assertEquals(WechatAttribution.VERIFIED, listener.receipts.single().attribution)
+        assertTrue(listener.receipts.isEmpty())
         client.cancel("web-1")
         WechatFactoryShadow.respond(SendMessageToWX.Resp().apply { transaction = second.transaction })
-        assertEquals(1, listener.receipts.size)
+        assertTrue(listener.receipts.isEmpty())
         assertTrue(client.hasPendingRequest("auth-after-web"))
         assertEquals("auth-after-web", store.saved?.requestId)
     }
@@ -160,14 +167,14 @@ class AndroidWechatClientTest {
         client.openMerchantTransfer("first", "merchant", "app-id", "package")
         val first = WechatFactoryShadow.sent.last()
         client.openMerchantTransfer("second", "merchant", "app-id", "package")
-        assertEquals(listOf("first" to WechatStatus.REQUESTED, "second" to WechatStatus.REQUESTED), listener.submitted)
+        assertEquals(listOf("first" to WechatStatus.REQUESTED, "first" to WechatStatus.CANCELLED, "second" to WechatStatus.REQUESTED), listener.submitted)
         assertNull(store.saved)
         client.authorize("next-auth")
         assertEquals("next-auth" to WechatStatus.REQUESTED, listener.submitted.last())
         WechatFactoryShadow.respond(WXOpenBusinessView.Resp().apply {
             transaction = first.transaction; businessType = "requestMerchantTransfer"; extMsg = "{}"
         })
-        assertEquals("first", listener.receipts.single().requestId)
+        assertTrue(listener.receipts.isEmpty())
         assertEquals("next-auth", store.saved?.requestId)
         client.cancel("second")
         assertEquals("second" to WechatStatus.CANCELLED, listener.submitted.last())
@@ -316,8 +323,9 @@ class AndroidWechatClientTest {
         idle()
         assertEquals(listOf("pending" to WechatStatus.REQUESTED), listener.submitted)
         assertEquals("pending", store.saved?.requestId)
+        store.failSave = true
         client.authorize("other")
-        assertEquals("other" to WechatStatus.BUSY, listener.submitted.last())
+        assertEquals("other" to WechatStatus.FAILED, listener.submitted.last())
         WechatFactoryShadow.respond(authResponse())
         assertTrue(listener.receipts.isEmpty())
         store.failClear = false
@@ -531,6 +539,49 @@ class AndroidWechatClientTest {
         val queued = AndroidWechatModule(client)
         background { queued.call("listen", "{}", {}); queued.call("authorize", "{\"requestId\":\"queued-module\"}", {}); queued.onDestroy() }
         idle(); assertTrue(WechatFactoryShadow.sent.isEmpty())
+    }
+
+    @Test fun loginShareAndTransferSubmitIndependentlyWhileImageWorkIsRunning() {
+        client.shareImage("image-parallel", image(), WechatScene.SESSION)
+        client.authorize("auth-parallel")
+        client.openMerchantTransfer("transfer-parallel", "merchant", "app", "package")
+        awaitSubmission(3)
+        assertTrue(listener.submitted.all { it.second == WechatStatus.REQUESTED })
+        assertEquals(3, WechatFactoryShadow.sent.size)
+        assertEquals("auth-parallel", store.saved?.requestId)
+        assertTrue(client.hasPendingRequest("transfer-parallel"))
+        assertFalse(client.hasPendingRequest("image-parallel"))
+    }
+
+    @Test fun retryAuthorizationReplacesOnlyItsOwnRoundAndRejectsOldReceipt() {
+        client.authorize("old-auth")
+        val old = authResponse()
+        client.openMerchantTransfer("transfer-current", "merchant", "app", "package")
+        client.authorize("new-auth")
+        client.cancel("old-auth")
+        WechatFactoryShadow.respond(old)
+        assertTrue(listener.receipts.isEmpty())
+        assertEquals("new-auth", store.saved?.requestId)
+        assertTrue(client.hasPendingRequest("transfer-current"))
+        WechatFactoryShadow.respond(authResponse())
+        assertEquals("new-auth", listener.receipts.single().requestId)
+        assertNull(store.saved)
+        assertTrue(client.hasPendingRequest("transfer-current"))
+    }
+
+    @Test fun replacementCallbackCanStartThirdRoundWithoutSendingSecond() {
+        client.attach(object : WechatListener {
+            override fun onSubmitted(requestId: String, status: WechatStatus) {
+                if (requestId == "first" && status == WechatStatus.CANCELLED) client.authorize("third")
+            }
+            override fun onReceipt(receipt: WechatReceipt) = Unit
+        })
+        client.authorize("first")
+        client.authorize("second")
+        assertEquals(2, WechatFactoryShadow.sent.size)
+        assertEquals("third", store.saved?.requestId)
+        assertFalse(client.hasPendingRequest("second"))
+        assertTrue(client.hasPendingRequest("third"))
     }
 
     private fun authResponse(): SendAuth.Resp {

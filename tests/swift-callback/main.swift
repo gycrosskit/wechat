@@ -25,8 +25,10 @@ class WXApi {
     static var sendCompletions = [(Bool) -> Void]()
     static var onSend: ((BaseReq) -> Void)?
     static func registerApp(_ id: String, universalLink: String) -> Bool { true }
-    static func isWXAppInstalled() -> Bool { true }
-    static func isWXAppSupport() -> Bool { true }
+    static var installed = true
+    static var supported = true
+    static func isWXAppInstalled() -> Bool { installed }
+    static func isWXAppSupport() -> Bool { supported }
     static func send(_ req: BaseReq, completion: @escaping (Bool) -> Void) {
         sent.append(req); sendCompletions.append(completion); onSend?(req)
         if autoAck { completion(true) }
@@ -39,16 +41,18 @@ class WXApi {
     }
     static func reset() {
         calls = 0; pending = []; dispatch = nil; accepted = true
-        autoAck = true; sent = []; sendCompletions = []; onSend = nil
+        autoAck = true; sent = []; sendCompletions = []; onSend = nil; installed = true; supported = true
     }
 }
 class Store: WechatAuthorizationStore {
     var saved: WechatPendingAuthorization? = .init(requestID: "auth", state: "state")
     var failClear = false
+    var failSave = false
     var onClear: (() -> Void)?
     func load() -> WechatPendingAuthorization? { saved }
     func save(_ request: WechatPendingAuthorization?) throws {
         if request == nil { onClear?(); if failClear { throw NSError(domain: "journal", code: 1) } }
+        if request != nil && failSave { throw NSError(domain: "journal", code: 2) }
         saved = request
     }
 }
@@ -158,148 +162,154 @@ check(releasedClient == nil && releasedDelegate == nil, "delegate closures do no
 print("PASS: client/delegate ownership has no retain cycle")
 
 func drainSendAck() { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01)) }
-WXApi.reset(); WXApi.autoAck = false
-var imageStatuses = [(String, String)](), imageReceipts = [WechatReceipt]()
-let imageClient = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx",
-    onSubmitted: { imageStatuses.append(($0, $1)) }, onReceipt: { imageReceipts.append($0) })
-check(imageClient.canCorrelateShareReceipt, "fresh client can provide a singlePending candidate")
-for index in 1...3 {
-    let id = "image-\(index)"
-    imageClient.shareImage(requestID: id, data: Data([1]), scene: .session)
-    check(!imageClient.canCorrelateShareReceipt && WXApi.sent.count == index, "in-flight or previously accepted image cannot provide a share candidate")
-    imageClient.shareImage(requestID: "overlap-\(index)", data: Data([1]), scene: .session)
-    check(imageStatuses.last?.1 == "busy" && WXApi.sent.count == index, "image holds sending exclusion until actual SDK ack")
-    WXApi.sendCompletions[index - 1](true); drainSendAck()
-    check(imageStatuses.last?.0 == id && imageStatuses.last?.1 == "requested", "requested comes from the real SDK ack")
+func webpage(_ client: WechatClient, _ id: String) {
+    client.shareWebPage(requestID: id, url: "https://example.com", title: "title", description: "", thumbnail: Data([1]), scene: .session)
 }
-check(imageReceipts.isEmpty, "three images can be sent without any final SDK receipt")
-imageClient.authorize(requestID: "after-images-auth")
-check(WXApi.sent.last is SendAuthReq, "images without final receipts allow authorization")
-let authRequest = WXApi.sent.last as! SendAuthReq
-WXApi.sendCompletions.last!(true); drainSendAck()
-let authResponse = SendAuthResp(); authResponse.state = authRequest.state
-imageClient.onResp(authResponse)
-check(imageReceipts.last?.requestID == "after-images-auth" && imageReceipts.last?.attribution == .verified, "image uncertainty does not weaken OAuth state")
-imageClient.openMerchantTransfer(requestID: "after-images-transfer", merchantID: "merchant", appID: "app", packageValue: "package")
-check(WXApi.sent.last is WXOpenBusinessViewReq, "images allow transfer submission")
-WXApi.sendCompletions.last!(true); drainSendAck()
-imageClient.onResp(WXOpenBusinessViewResp())
-check(imageReceipts.last?.kind == .merchantTransfer && imageReceipts.last?.attribution == .unattributed, "transfer receipt remains unattributed page result")
-imageClient.shareWebPage(requestID: "web-after-image", url: "https://example.com", title: "title", description: "", thumbnail: Data([1]), scene: .session)
-let webSendIndex = WXApi.sendCompletions.count - 1
-imageClient.onResp(SendMessageToWXResp())
-check(imageReceipts.last?.candidateRequestID == nil && imageReceipts.last?.attribution == .unattributed, "old image callback cannot become the new webpage candidate")
-WXApi.sendCompletions[webSendIndex](true); drainSendAck()
-imageClient.shareImage(requestID: "image-after-web", data: Data([1]), scene: .session)
-check(imageStatuses.last?.0 == "web-after-image" && imageStatuses.last?.1 == "requested" && WXApi.sent.last is SendMessageToWXReq, "uncertain webpage releases at SDK ack for following image")
-check(!imageClient.cancelWithResult(requestID: "web-after-image"), "completed uncertain webpage has no remaining candidate")
-WXApi.sendCompletions[webSendIndex](false); drainSendAck()
-imageClient.shareImage(requestID: "stale-ack-overlap", data: Data([1]), scene: .session)
-check(imageStatuses.last?.1 == "busy", "stale webpage ack/cancel cannot clear newer image")
-WXApi.sendCompletions.last!(false); drainSendAck()
-check(imageStatuses.last?.0 == "image-after-web" && imageStatuses.last?.1 == "failed", "SDK refusal is never reported as requested")
-imageClient.shareImage(requestID: "retry-after-refusal", data: Data([1]), scene: .session)
-check(WXApi.sent.count == 8, "SDK refusal releases submission for retry")
-print("PASS: three image submissions, actual ack exclusion, early/late unattributed receipts, OAuth/transfer and stale ack/cancel")
+WXApi.reset(); WXApi.autoAck = false
+var statuses = [(String, String)](), responses = [WechatReceipt]()
+let client = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx",
+    onSubmitted: { statuses.append(($0, $1)) }, onReceipt: { responses.append($0) })
+client.authorize(requestID: "auth-old")
+let oldAuth = WXApi.sent.last as! SendAuthReq
+webpage(client, "share-old")
+client.openMerchantTransfer(requestID: "transfer-old", merchantID: "merchant", appID: "app", packageValue: "package")
+check(WXApi.sent.count == 3 && statuses.isEmpty, "three kinds dispatch independently before SDK ack")
+client.authorize(requestID: "auth-new")
+let auth = WXApi.sent.last as! SendAuthReq
+webpage(client, "share-new")
+client.openMerchantTransfer(requestID: "transfer-new", merchantID: "merchant", appID: "app", packageValue: "package")
+check(WXApi.sent.count == 6 && statuses.map { $0.0 } == ["auth-old", "share-old", "transfer-old"] && statuses.allSatisfy { $0.1 == "cancelled" }, "each new kind cancels its old submission immediately")
+for index in 0..<3 { WXApi.sendCompletions[index](true) }; drainSendAck()
+check(statuses.count == 3, "late SDK acks do not revive replaced submissions")
+for id in ["auth-old", "share-old", "transfer-old"] { check(!client.cancelWithResult(requestID: id), "old cancel does not clear current kind") }
+let oldResponse = SendAuthResp(); oldResponse.state = oldAuth.state; client.onResp(oldResponse)
+check(responses.isEmpty && client.hasPendingRequest(requestID: "auth-new"), "replaced OAuth state cannot consume the new state")
+for index in 3..<6 { WXApi.sendCompletions[index](true) }; drainSendAck()
+check(statuses.suffix(3).map { $0.0 } == ["auth-new", "share-new", "transfer-new"] && statuses.suffix(3).allSatisfy { $0.1 == "requested" }, "only current SDK acks finish submissions")
+check(client.hasPendingRequest(requestID: "auth-new") && !client.hasPendingRequest(requestID: "transfer-new"), "OAuth retains trusted receipt wait while unattributed transfer releases at ack")
+client.onResp(SendMessageToWXResp()); client.onResp(WXOpenBusinessViewResp())
+check(responses.count == 2 && responses.allSatisfy { $0.requestID == nil && $0.candidateRequestID == nil && $0.attribution == .unattributed }, "overlapping shares and transfer stay unattributed")
+let response = SendAuthResp(); response.state = auth.state; client.onResp(response)
+check(responses.last?.requestID == "auth-new" && responses.last?.attribution == .verified, "OAuth state proof remains independent")
+client.authorize(requestID: "auth-new")
+check(statuses.last?.1 == "invalid_content", "completed IDs cannot be reused")
+for index in 0..<66 {
+    webpage(client, "retry-\(index)")
+    WXApi.sendCompletions.last!(true); drainSendAck()
+    check(statuses.last?.0 == "retry-\(index)" && statuses.last?.1 == "requested", "missing final receipt never blocks the next round")
+}
+print("PASS: per-kind current rounds, immediate cancellation, stale SDK ack/state/cancel isolation and 66 retries")
 
 WXApi.reset(); WXApi.autoAck = false
-var cancellationStatuses = [(String, String)](), cancellationReceipts = [WechatReceipt]()
-let cancellationClient = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx",
-    onSubmitted: { cancellationStatuses.append(($0, $1)) }, onReceipt: { cancellationReceipts.append($0) })
-cancellationClient.shareWebPage(requestID: "cancel-web", url: "https://example.com", title: "title", description: "", thumbnail: Data([1]), scene: .session)
-check(cancellationClient.cancelWithResult(requestID: "cancel-web") && !cancellationClient.canCorrelateShareReceipt, "cancelled dispatched webpage permanently loses candidate evidence")
-cancellationClient.shareImage(requestID: "after-cancel", data: Data([1]), scene: .session)
-check(WXApi.sent.count == 2, "cancelled webpage does not disable ordinary images")
-WXApi.sendCompletions[0](true); drainSendAck()
-check(!cancellationClient.cancelWithResult(requestID: "cancel-web"), "old webpage cancel cannot clear newer image")
-cancellationClient.onResp(SendMessageToWXResp())
-check(cancellationReceipts.last?.attribution == .unattributed && cancellationReceipts.last?.candidateRequestID == nil, "cancelled webpage callback has no newer candidate")
-cancellationClient.shareImage(requestID: "busy-after-old-callback", data: Data([1]), scene: .session)
-check(cancellationStatuses.last?.1 == "busy" && WXApi.sent.count == 2, "cancelled webpage callback cannot release image sending")
-WXApi.sendCompletions[1](true); drainSendAck()
-cancellationClient.shareWebPage(requestID: "web-after-cancel", url: "https://example.com", title: "title", description: "", thumbnail: Data([1]), scene: .session)
-WXApi.sendCompletions[2](true); drainSendAck()
-cancellationClient.onResp(SendMessageToWXResp())
-check(cancellationReceipts.last?.attribution == .unattributed && !cancellationClient.canCorrelateShareReceipt, "later receipts cannot restore candidate evidence")
-cancellationClient.shareImage(requestID: "again-after-cancel", data: Data([1]), scene: .session)
-check(WXApi.sent.count == 4, "uncertain webpage does not retain global share occupancy")
-print("PASS: cancelled dispatched webpage allows images while late callbacks stay unattributed")
-
-WXApi.reset(); WXApi.autoAck = false
-var refusedStatuses = [(String, String)](), refusedReceipts = [WechatReceipt]()
-let refusedClient = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx",
-    onSubmitted: { refusedStatuses.append(($0, $1)) }, onReceipt: { refusedReceipts.append($0) })
-refusedClient.shareImage(requestID: "refused-image", data: Data([1]), scene: .session)
-check(!refusedClient.canCorrelateShareReceipt, "in-flight image cannot provide a share candidate")
+var reentrant: WechatClient!; var reentrantStatuses = [(String, String)]()
+reentrant = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx", onSubmitted: { id, status in
+    reentrantStatuses.append((id, status))
+    if id == "first", status == "cancelled" { reentrant.authorize(requestID: "third") }
+})
+reentrant.authorize(requestID: "first")
+reentrant.authorize(requestID: "second")
+check(WXApi.sent.count == 2 && reentrant.hasPendingRequest(requestID: "third") && !reentrant.hasPendingRequest(requestID: "second"), "replacement callback reentry leaves only third round and prevents second dispatch")
+check(reentrantStatuses.map { $0.0 } == ["first", "second"] && reentrantStatuses.allSatisfy { $0.1 == "cancelled" }, "nested replacement completes both superseded waits")
 WXApi.sendCompletions[0](false); drainSendAck()
-check(refusedStatuses.last?.1 == "failed" && refusedClient.canCorrelateShareReceipt, "SDK refusal without receipt preserves webpage candidate capability")
-refusedClient.shareWebPage(requestID: "web-after-refusal", url: "https://example.com", title: "title", description: "", thumbnail: Data([1]), scene: .session)
+check(reentrantStatuses.count == 2 && reentrant.hasPendingRequest(requestID: "third"), "old rejection cannot clear reentrant successor")
 WXApi.sendCompletions[1](true); drainSendAck()
-refusedClient.onResp(SendMessageToWXResp())
-check(refusedReceipts.last?.candidateRequestID == "web-after-refusal" && refusedReceipts.last?.attribution == .singlePending, "refused image does not disable later webpage tasks")
-refusedClient.shareImage(requestID: "early-image-refusal", data: Data([1]), scene: .session)
-refusedClient.onResp(SendMessageToWXResp())
-WXApi.sendCompletions[2](false); drainSendAck()
-check(!refusedClient.canCorrelateShareReceipt && refusedReceipts.last?.candidateRequestID == nil, "observed early image receipt keeps attribution uncertain despite later refusal")
-refusedClient.shareImage(requestID: "later-refusal", data: Data([1]), scene: .session)
-WXApi.sendCompletions[3](false); drainSendAck()
-check(!refusedClient.canCorrelateShareReceipt, "later refusal cannot clear existing attribution uncertainty")
-print("PASS: image refusal preserves webpage attribution unless an image receipt was already observed")
+check(reentrantStatuses.last?.0 == "third" && reentrantStatuses.last?.1 == "requested", "successor finishes normally")
+print("PASS: cancellation callback reentry commits before callback and suppresses overtaken dispatch")
 
 WXApi.reset(); WXApi.autoAck = false
 var earlyStatuses = [(String, String)](), earlyReceipts = [WechatReceipt]()
-let earlyClient = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx",
-    onSubmitted: { earlyStatuses.append(($0, $1)) }, onReceipt: { earlyReceipts.append($0) })
-WXApi.onSend = { _ in earlyClient.onResp(SendMessageToWXResp()) }
-earlyClient.shareWebPage(requestID: "early-web", url: "https://example.com", title: "title", description: "", thumbnail: Data([1]), scene: .session)
-check(earlyReceipts.last?.candidateRequestID == "early-web" && earlyReceipts.last?.attribution == .singlePending, "fresh webpage retains existing singlePending behavior before send ack")
-earlyClient.shareImage(requestID: "early-web-overlap", data: Data([1]), scene: .session)
-check(earlyStatuses.last?.1 == "busy", "early tracked receipt does not release SDK send exclusion")
+var early: WechatClient!
+early = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx", onSubmitted: { earlyStatuses.append(($0, $1)) }, onReceipt: {
+    earlyReceipts.append($0)
+    if $0.candidateRequestID == "early-web" { webpage(early, "after-early-web") }
+})
+WXApi.onSend = { request in if request is SendMessageToWXReq && WXApi.sent.count == 1 { early.onResp(SendMessageToWXResp()) } }
+webpage(early, "early-web")
+check(WXApi.sent.count == 2 && earlyStatuses.count == 1 && earlyStatuses[0].0 == "early-web" && earlyStatuses[0].1 == "requested", "early final receipt finishes submission and clears round before receipt callback reentry")
+check(earlyReceipts[0].candidateRequestID == "early-web" && earlyReceipts[0].requestID == nil && earlyReceipts[0].attribution == .singlePending, "unambiguous fresh share remains candidate only")
+WXApi.sendCompletions[0](false); drainSendAck()
+check(earlyStatuses.count == 1 && early.hasPendingRequest(requestID: "after-early-web"), "early completed round ignores delayed rejection")
+WXApi.sendCompletions[1](true); drainSendAck()
+check(earlyStatuses.last?.0 == "after-early-web" && earlyStatuses.last?.1 == "requested", "early receipt permits next submission")
+print("PASS: early receipt clears current round, finishes wait once and permits reentrant share")
+
+WXApi.reset(); WXApi.autoAck = false
+let imageClient = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx", onSubmitted: { _, _ in })
+imageClient.shareImage(requestID: "refused", data: Data([1]), scene: .session)
+WXApi.sendCompletions[0](false); drainSendAck()
+check(imageClient.canCorrelateShareReceipt, "refused image without receipt preserves candidate capability")
+webpage(imageClient, "web-after-refusal")
+WXApi.sendCompletions[1](true); drainSendAck()
+check(imageClient.cancelWithResult(requestID: "web-after-refusal") && !imageClient.canCorrelateShareReceipt, "cancelled dispatched webpage permanently downgrades candidate evidence")
+imageClient.shareImage(requestID: "image", data: Data([1]), scene: .session)
+imageClient.onResp(SendMessageToWXResp())
+WXApi.sendCompletions[2](false); drainSendAck()
+check(!imageClient.canCorrelateShareReceipt, "early image receipt cannot restore evidence after later refusal")
+webpage(imageClient, "web-uncertain")
+WXApi.sendCompletions[3](true); drainSendAck()
+check(!imageClient.hasPendingRequest(requestID: "web-uncertain"), "uncertain shares release after submission without claiming a candidate")
+print("PASS: image refusal, accepted/cancelled share uncertainty and submission-only cleanup")
+
+WXApi.reset(); WXApi.autoAck = false
+let failingStore = Store(); failingStore.saved = nil
+var failedStatuses = [(String, String)]()
+let persisted = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx", onSubmitted: { failedStatuses.append(($0, $1)) }, store: failingStore)
+persisted.authorize(requestID: "persisted")
+let persistedRequest = WXApi.sent[0] as! SendAuthReq
+failingStore.failSave = true
+persisted.authorize(requestID: "save-failed")
+check(failedStatuses.last?.1 == "failed" && persisted.hasPendingRequest(requestID: "persisted") && failingStore.saved?.state == persistedRequest.state, "atomic replacement save failure retains old trusted authorization")
+failingStore.failSave = false; failingStore.failClear = true
+check(!persisted.cancelWithResult(requestID: "persisted") && persisted.hasPendingRequest(requestID: "persisted"), "failed journal clear preserves active wait")
+failingStore.failClear = false
+check(persisted.cancelWithResult(requestID: "persisted") && failingStore.saved == nil, "cancel retry clears journal")
 WXApi.sendCompletions[0](true); drainSendAck()
-earlyClient.shareImage(requestID: "after-early-web", data: Data([1]), scene: .session)
-check(WXApi.sent.count == 2 && earlyReceipts.last?.attribution == .unattributed, "image may follow actual webpage ack and never inherits tracked attribution")
-earlyClient.shareImage(requestID: "early-image-overlap", data: Data([1]), scene: .session)
-check(earlyStatuses.last?.1 == "busy" && WXApi.sent.count == 2, "early image receipt cannot release current SDK submission")
-print("PASS: early webpage receipt keeps singlePending evidence and sending exclusion")
+check(failedStatuses.last?.1 == "cancelled", "cancelled authorization ignores delayed ack")
+print("PASS: OAuth atomic replacement/clear failure and retry")
 
 WXApi.reset(); WXApi.autoAck = false
-var transferStatuses = [(String, String)]()
-let repeatTransferClient = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx",
-    onSubmitted: { transferStatuses.append(($0, $1)) })
-for index in 1...2 {
-    let id = "repeat-transfer-\(index)"
-    repeatTransferClient.openMerchantTransfer(requestID: id, merchantID: "merchant", appID: "app", packageValue: "package")
-    check(WXApi.sent.count == index && WXApi.sent.last is WXOpenBusinessViewReq, "transfer without final receipt can submit again")
-    WXApi.sendCompletions.last!(true); drainSendAck()
-    check(transferStatuses.last?.0 == id && transferStatuses.last?.1 == "requested", "transfer releases sending exclusion at SDK ack")
-}
-print("PASS: Swift repeated transfer without final receipt preserves current non-blocking submission contract")
+let routed = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx", onSubmitted: { _, _ in })
+var owned = Set(["early-routed"]), routedEvents = [String]()
+let route = routed.addModuleListener(owns: { owned.contains($0) }, onSubmitted: { id, status in
+    routedEvents.append(status)
+    if !routed.hasPendingRequest(requestID: id) { owned.remove(id) }
+}, onReceipt: { result in
+    routedEvents.append("receipt")
+    check(result.requestID == "early-routed", "early receipt stays routed to module owner")
+})
+routed.authorize(requestID: "early-routed")
+let routedResponse = SendAuthResp(); routedResponse.state = (WXApi.sent[0] as! SendAuthReq).state
+routed.onResp(routedResponse)
+check(routedEvents == ["receipt", "requested"] && owned.isEmpty, "early receipt reaches original module before submission completion releases ownership")
+WXApi.sendCompletions[0](true); drainSendAck()
+check(routedEvents.count == 2, "early receipt submission completes once")
+routed.removeModuleListener(route)
+print("PASS: early OAuth receipt module routing precedes ownership release")
 
 WXApi.reset(); WXApi.autoAck = false
-var webpageStatuses = [(String, String)](), webpageReceipts = [WechatReceipt]()
-let webpageClient = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx",
-    onSubmitted: { webpageStatuses.append(($0, $1)) }, onReceipt: { webpageReceipts.append($0) })
-webpageClient.shareWebPage(requestID: "web-one", url: "https://example.com", title: "title", description: "", thumbnail: Data([1]), scene: .session)
-WXApi.sendCompletions.last!(true); drainSendAck()
-check(webpageClient.hasPendingRequest(requestID: "web-one"), "first accepted webpage retains its single candidate")
-webpageClient.authorize(requestID: "auth-with-web")
-check(WXApi.sent.last is SendAuthReq, "accepted webpage does not block new auth")
-WXApi.sendCompletions.last!(true); drainSendAck()
-webpageClient.onResp(SendMessageToWXResp())
-check(webpageReceipts.last?.candidateRequestID == "web-one" && webpageReceipts.last?.attribution == .singlePending, "auth does not replace share attribution")
-check(webpageClient.hasPendingRequest(requestID: "auth-with-web"), "old share receipt does not clear new auth")
-check(webpageClient.cancelWithResult(requestID: "auth-with-web"), "auth can be canceled independently")
-for index in 0..<66 {
-    let id = "no-receipt-web-\(index)"
-    webpageClient.shareWebPage(requestID: id, url: "https://example.com", title: "title", description: "", thumbnail: Data([1]), scene: .session)
-    check(webpageStatuses.last?.1 != "busy", "webpage retries do not wait for final receipts")
-    WXApi.sendCompletions.last!(true); drainSendAck()
-    check(webpageStatuses.last?.0 == id && webpageStatuses.last?.1 == "requested", "each webpage is submitted")
+var validationStatuses = [(String, String)]()
+let validationClient = WechatClient(appID: "wxapp", universalLink: "https://example.com/wx", onSubmitted: { validationStatuses.append(($0, $1)) })
+webpage(validationClient, "valid-share")
+validationClient.openMerchantTransfer(requestID: "valid-transfer", merchantID: "merchant", appID: "app", packageValue: "package")
+validationClient.authorize(requestID: "valid-auth")
+validationClient.shareImage(requestID: "empty-image", data: Data(), scene: .session)
+validationClient.shareImage(requestID: "oversized-image", data: Data(repeating: 0, count: 25 * 1024 * 1024 + 1), scene: .session)
+validationClient.shareImage(requestID: "empty-recipient", data: Data([1]), scene: .session, recipientID: " ", senderOpenID: "sender")
+validationClient.shareImage(requestID: "timeline-recipient", data: Data([1]), scene: .timeline, recipientID: "recipient", senderOpenID: "sender")
+validationClient.shareImage(requestID: "missing-sender", data: Data([1]), scene: .session, recipientID: "recipient")
+validationClient.shareWebPage(requestID: "invalid-url", url: "https://user:password@example.com", title: "", description: "", thumbnail: Data([1]), scene: .session)
+validationClient.shareWebPage(requestID: "empty-thumbnail", url: "https://example.com", title: "", description: "", thumbnail: Data(), scene: .session)
+for (index, fields) in [[" ", "app", "package"], ["merchant", "", "package"], ["merchant", "app", " "]].enumerated() {
+    validationClient.openMerchantTransfer(requestID: "empty-transfer-\(index)", merchantID: fields[0], appID: fields[1], packageValue: fields[2])
 }
-check(!webpageClient.canCorrelateShareReceipt, "overlapping share receipts cannot be associated without SDK transaction")
-webpageClient.authorize(requestID: "new-auth-after-web")
-webpageClient.onResp(SendMessageToWXResp())
-check(webpageReceipts.last?.attribution == .unattributed && webpageReceipts.last?.candidateRequestID == nil, "old share cannot complete a new webpage task")
-check(!webpageClient.cancelWithResult(requestID: "no-receipt-web-0") && webpageClient.hasPendingRequest(requestID: "new-auth-after-web"), "old webpage cancel cannot clear new auth send")
-WXApi.sendCompletions.last!(true); drainSendAck()
-print("PASS: accepted webpage releases send exclusion, repeated retries and auth work; old share receipts/cancel stay isolated")
+WXApi.supported = false
+webpage(validationClient, "unsupported-share")
+WXApi.supported = true; WXApi.installed = false
+validationClient.authorize(requestID: "uninstalled-auth")
+WXApi.installed = true
+check(WXApi.sent.count == 3 && validationStatuses.count == 12 && validationStatuses.allSatisfy { $0.1 != "cancelled" }, "invalid parameters and unavailable SDK do not replace valid current rounds")
+for id in ["valid-share", "valid-transfer", "valid-auth"] { check(validationClient.hasPendingRequest(requestID: id), "valid current round survives invalid same-kind attempt") }
+webpage(validationClient, "valid-share-successor")
+check(WXApi.sent.count == 4 && validationStatuses.last?.0 == "valid-share" && validationStatuses.last?.1 == "cancelled", "valid successor still replaces old share normally")
+check(validationClient.hasPendingRequest(requestID: "valid-share-successor") && validationClient.hasPendingRequest(requestID: "valid-transfer") && validationClient.hasPendingRequest(requestID: "valid-auth"), "valid share replacement preserves other kinds")
+print("PASS: invalid image/recipient/URL/merchant parameters and unavailable SDK preserve valid current rounds")

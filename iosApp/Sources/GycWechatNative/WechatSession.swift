@@ -18,24 +18,31 @@ public protocol WechatAuthorizationStore {
     func save(_ request: WechatPendingAuthorization?) throws
 }
 
-// ponytail: 单笔本地候选无法辨认不同 URL 重复回执；需要严格证明时由宿主核验，SDK 无 transaction。
+// SDK 无分享 transaction；单笔候选只能帮助投递，不能证明回执归属。
 final class WechatSession {
-    private var usedIDs = Set<String>()
-    private var submitting: String?
     enum ShareMode { case submissionOnly, tracked }
-    private var share: (id: String, mode: ShareMode, dispatched: Bool)?
+    private enum Kind { case authorization, share, merchantTransfer }
+    private struct Current {
+        let id: String
+        var state: String? = nil
+        var sharing: ShareMode? = nil
+        var dispatched = false
+        var submitting = true
+    }
+    private var usedIDs = Set<String>()
+    private var current: [Kind: Current] = [:]
     private var shareAttributionUncertain = false
     var canCorrelateShareReceipt: Bool {
-        !shareAttributionUncertain && !(share?.mode == .submissionOnly && share?.dispatched == true)
+        !shareAttributionUncertain && !(current[.share]?.sharing == .submissionOnly && current[.share]?.dispatched == true)
     }
-    private var authorization: WechatPendingAuthorization?
     private let store: WechatAuthorizationStore?
     private var restorationFailed = false
     init(store: WechatAuthorizationStore? = nil) {
         self.store = store
         do {
             if let saved = try store?.load(), Self.valid(saved) {
-                authorization = saved; usedIDs.insert(saved.requestID)
+                current[.authorization] = Current(id: saved.requestID, state: saved.state, submitting: false)
+                usedIDs.insert(saved.requestID)
             }
         } catch { restorationFailed = true }
     }
@@ -43,68 +50,69 @@ final class WechatSession {
         !request.requestID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && request.requestID.utf16.count <= 128 &&
             !request.state.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && request.state.utf16.count <= 256
     }
-    func begin(_ id: String, state: String? = nil, sharing: ShareMode? = nil) -> String? {
-        guard !restorationFailed else { return "failed" }
+    func begin(_ id: String, state: String? = nil, sharing: ShareMode? = nil, onReplaced: ((String) -> Void)? = nil) -> String? {
         guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, id.utf16.count <= 128, !usedIDs.contains(id) else { return "invalid_content" }
-        guard submitting == nil, authorization == nil else { return "busy" }
         usedIDs.insert(id)
+        let kind: Kind = state != nil ? .authorization : sharing != nil ? .share : .merchantTransfer
         if let state {
+            guard !restorationFailed else { return "failed" }
             let request = WechatPendingAuthorization(requestID: id, state: state)
             guard Self.valid(request) else { return "invalid_content" }
+            // 一次原子覆写；失败时旧 state 和当前轮均不变。
             do { try store?.save(request) } catch { return "failed" }
-            authorization = request
         }
-        if let sharing {
-            // SDK 无分享 transaction；旧分享尚无回执时再次分享，后续回执不能归给任一候选。
-            if share?.dispatched == true { shareAttributionUncertain = true }
-            share = (id, sharing, false)
-        }
-        submitting = id
+        let previous = current[kind]
+        if kind == .share, previous?.dispatched == true { shareAttributionUncertain = true }
+        current[kind] = Current(id: id, state: state, sharing: sharing)
+        // 先使旧轮失效，回调可以再次发起同类请求。
+        if let previous { onReplaced?(previous.id) }
         return nil
     }
+    func isSubmitting(_ id: String) -> Bool { current.values.contains { $0.id == id && $0.submitting } }
     func submitted(_ id: String, accepted: Bool) -> Bool {
-        guard submitting == id else { return false }
-        submitting = nil
-        if accepted, share?.id == id, share?.mode == .submissionOnly { shareAttributionUncertain = true }
-        if share?.id == id, !accepted || share?.mode == .submissionOnly || shareAttributionUncertain { share = nil }
-        if !accepted, authorization?.requestID == id {
+        guard let (kind, pending) = current.first(where: { $0.value.id == id && $0.value.submitting }) else { return false }
+        if kind == .authorization, !accepted {
             do { try store?.save(nil) } catch { return false }
-            authorization = nil
+        }
+        if kind == .share, accepted, pending.sharing == .submissionOnly { shareAttributionUncertain = true }
+        if !accepted || kind == .merchantTransfer || kind == .share && (pending.sharing == .submissionOnly || shareAttributionUncertain) {
+            current.removeValue(forKey: kind)
+        } else {
+            current[kind]?.submitting = false
         }
         return true
     }
     @discardableResult func dispatchedShare(_ id: String) -> Bool {
-        guard submitting == id, share?.id == id else { return false }
-        share?.dispatched = true
+        guard current[.share]?.id == id, current[.share]?.submitting == true else { return false }
+        current[.share]?.dispatched = true
         return true
     }
+    var submittingShare: Bool { current[.share]?.submitting == true }
+    func submittingAuthorization(_ state: String?) -> Bool {
+        current[.authorization]?.state == state && current[.authorization]?.submitting == true
+    }
     func consumeShare() -> String? {
-        // 早于提交结果的图片回执已经证明交付；后续拒绝结果不能恢复关联能力。
-        if share?.mode == .submissionOnly, share?.dispatched == true { shareAttributionUncertain = true }
-        guard !shareAttributionUncertain, let pending = share, pending.mode == .tracked, pending.dispatched else { return nil }
-        share = nil
+        if current[.share]?.sharing == .submissionOnly, current[.share]?.dispatched == true { shareAttributionUncertain = true }
+        guard !shareAttributionUncertain, let pending = current[.share], pending.sharing == .tracked, pending.dispatched else { return nil }
+        current.removeValue(forKey: .share)
         return pending.id
     }
     func consumeAuthorization(_ state: String?) -> String? {
-        guard let auth = authorization, state == auth.state else { return nil }
+        guard let auth = current[.authorization], state == auth.state else { return nil }
         do { try store?.save(nil) } catch { return nil }
-        authorization = nil
-        return auth.requestID
+        current.removeValue(forKey: .authorization)
+        return auth.id
     }
-    func isCurrent(_ id: String) -> Bool { submitting == id || authorization?.requestID == id || share?.id == id }
-    func canResume(_ id: String) -> Bool { authorization?.requestID == id }
+    func isCurrent(_ id: String) -> Bool { current.values.contains { $0.id == id } }
+    func canResume(_ id: String) -> Bool { current[.authorization]?.id == id }
     func cancel(_ id: String) -> Bool {
-        let active = submitting == id || authorization?.requestID == id || share?.id == id
-        if authorization?.requestID == id {
+        guard let (kind, pending) = current.first(where: { $0.value.id == id }) else { return false }
+        if kind == .authorization {
             do { try store?.save(nil) } catch { return false }
         }
-        if share?.id == id {
-            if share?.dispatched == true { shareAttributionUncertain = true }
-            share = nil
-        }
-        if submitting == id { submitting = nil }
-        if authorization?.requestID == id { authorization = nil }
-        return active
+        if kind == .share, pending.dispatched { shareAttributionUncertain = true }
+        current.removeValue(forKey: kind)
+        return true
     }
 }
 
