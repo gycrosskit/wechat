@@ -173,7 +173,7 @@ HarmonyOS 本版 HAR 为 `0.1.9-rc.1`，配套 Maven `0.1.10-rc.1` / Git Pod `na
 ohpm install @gycrosskit/wechat-native@1.0.1
 ```
 
-受控发布仅使用 `ohpm publish --tag next`，不提升 `latest`。公开 Release HAR 消费与 Registry 安装分别验收，操作入口见[开发与验证](docs/开发与验证.md#har-rc-冻结与公开消费)。
+受控发布由原发布器按版本确定 dist-tag：正式版使用默认 `latest`，预发布使用 `candidate-<完整版本>`；不手工固定 `next`，未知结果沿原 journal 查回。公开 Release HAR 消费与 Registry 安装分别验收，操作入口见[开发与验证](docs/开发与验证.md#har-rc-冻结与公开消费)。
 
 ## 最小接入
 
