@@ -20,6 +20,8 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import org.json.JSONObject
 
+actual val supportsMerchantTransferReceiptOwnership: Boolean = true
+
 /** 宿主 Application 持有唯一非空 appId 实例，固定 wxapi Activity 把 Intent 交给 handleIntent；后台入口自动排队到 Main，store 同步读写也在 Main。 */
 class AndroidWechatClient(context: Context, appId: String, listener: WechatListener? = null, store: WechatRequestStore? = null) : WechatClient {
     private val main = Handler(Looper.getMainLooper())
@@ -34,8 +36,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
     private var activeOwner = desiredOwner
     private val queued = mutableMapOf<String, Request>()
     private val cancelledBeforeBegin = mutableSetOf<String>()
-    private var currentRequest: Request? = null
-    private val acceptedRequests = linkedMapOf<String, Request>()
+    private val currentRequests = mutableMapOf<WechatKind, Request>()
     private val moduleListeners = mutableMapOf<WechatListener, Set<String>>()
     private val receipts = mutableListOf<Pair<WechatListener?, WechatReceipt>>()
     private val application = context.applicationContext
@@ -62,7 +63,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
             }
         }
     }
-    /** 撤销监听但保留 pending；迟到回执最多缓存 64 笔并保持原 owner。 */
+    /** 撤销监听但保留各类型当前请求；迟到回执最多缓存 64 笔并保持原 owner。 */
     fun detach() {
         desiredOwner = null
         onMain { if (desiredOwner == null) activeOwner = null }
@@ -116,15 +117,15 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         // 入队前取得快照，调用方随后修改数组不能改变已提交内容。
         val copy = if (data.size in 1..MAX_WECHAT_IMAGE) data.copyOf() else byteArrayOf()
         submit(requestId) { request ->
+            if (recipientId != null && (recipientId.isBlank() || scene != WechatScene.SESSION)) { submitted(request, WechatStatus.INVALID_CONTENT); return@submit }
+            if (recipientId != null && (api.wxAppSupportAPI < Build.SEND_TO_SPECIFIED_CONTACT_SDK_INT || senderOpenId.isNullOrBlank())) { submitted(request, WechatStatus.UNSUPPORTED); return@submit }
+            if (copy.isEmpty() || copy.size > MAX_WECHAT_IMAGE) { submitted(request, WechatStatus.INVALID_CONTENT); return@submit }
+            if (copy.size > 10 * 1024 * 1024 && api.wxAppSupportAPI < Build.SEND_25M_IMAGE_SDK_INT) { submitted(request, WechatStatus.UNSUPPORTED); return@submit }
             if (!begin(request, WechatKind.SHARE, submissionOnly = true)) return@submit
-            if (recipientId != null && (recipientId.isBlank() || scene != WechatScene.SESSION)) { fail(request, WechatStatus.INVALID_CONTENT); return@submit }
-            if (recipientId != null && (api.wxAppSupportAPI < Build.SEND_TO_SPECIFIED_CONTACT_SDK_INT || senderOpenId.isNullOrBlank())) { fail(request, WechatStatus.UNSUPPORTED); return@submit }
-            if (copy.isEmpty() || copy.size > MAX_WECHAT_IMAGE) { fail(request, WechatStatus.INVALID_CONTENT); return@submit }
-            if (copy.size > 10 * 1024 * 1024 && api.wxAppSupportAPI < Build.SEND_25M_IMAGE_SDK_INT) { fail(request, WechatStatus.UNSUPPORTED); return@submit }
             images.execute {
                 val thumb = runCatching { thumbnail(copy) }.getOrNull()
                 onMain {
-                    if (currentRequest !== request || !session.isCurrent(request.id)) return@onMain
+                    if (request.cancelled || !session.isCurrent(request.id)) return@onMain
                     if (thumb == null) { fail(request, WechatStatus.INVALID_CONTENT); return@onMain }
                     sendShare(request, WXMediaMessage(WXImageObject(copy)).apply { thumbData = thumb }, scene, recipientId, senderOpenId)
                 }
@@ -134,15 +135,15 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
     override fun shareWebPage(requestId: String, url: String, title: String, description: String, thumbnail: ByteArray, scene: WechatScene) {
         val copy = if (thumbnail.size in 1..MAX_WECHAT_IMAGE) thumbnail.copyOf() else byteArrayOf()
         submit(requestId) { request ->
-            if (!begin(request, WechatKind.SHARE)) return@submit
             val uri = runCatching { Uri.parse(url) }.getOrNull()
             if (uri == null || uri.scheme?.lowercase() !in listOf("http", "https") || uri.host.isNullOrBlank() || uri.userInfo != null || url.toByteArray().size > 10 * 1024 || copy.isEmpty() || copy.size > MAX_WECHAT_IMAGE) {
-                fail(request, WechatStatus.INVALID_CONTENT); return@submit
+                submitted(request, WechatStatus.INVALID_CONTENT); return@submit
             }
+            if (!begin(request, WechatKind.SHARE)) return@submit
             images.execute {
                 val thumb = runCatching { thumbnail(copy) }.getOrNull()
                 onMain {
-                    if (currentRequest !== request || !session.isCurrent(request.id)) return@onMain
+                    if (request.cancelled || !session.isCurrent(request.id)) return@onMain
                     if (thumb == null) { fail(request, WechatStatus.INVALID_CONTENT); return@onMain }
                     sendShare(request, WXMediaMessage(WXWebpageObject().apply { webpageUrl = url }).apply {
                         this.title = wechatText(title, 256, 512); this.description = wechatText(description, 512, 1024); thumbData = thumb
@@ -152,9 +153,9 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         }
     }
     override fun openMerchantTransfer(requestId: String, merchantId: String, appId: String, packageValue: String) = submit(requestId) { request ->
+        if (merchantId.isBlank() || appId.isBlank() || packageValue.isBlank()) { submitted(request, WechatStatus.INVALID_CONTENT); return@submit }
+        if (api.wxAppSupportAPI < 0x28002d33) { submitted(request, WechatStatus.UNSUPPORTED); return@submit }
         if (!begin(request, WechatKind.MERCHANT_TRANSFER)) return@submit
-        if (merchantId.isBlank() || appId.isBlank() || packageValue.isBlank()) { fail(request, WechatStatus.INVALID_CONTENT); return@submit }
-        if (api.wxAppSupportAPI < 0x28002d33) { fail(request, WechatStatus.UNSUPPORTED); return@submit }
         send(request, WXOpenBusinessView.Req().apply {
             businessType = "requestMerchantTransfer"
             query = "mchId=${Uri.encode(merchantId)}&appId=${Uri.encode(appId)}&package=${Uri.encode(packageValue)}"
@@ -164,7 +165,7 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
     /** Main callback 返回真实取消结果；存储失败保留 pending，不能伪造终态。 */
     fun cancel(requestId: String, callback: (Result<Boolean>) -> Unit) = onMain {
         val waiting = synchronized(queued) { queued[requestId] }
-        val request = currentRequest?.takeIf { it.id == requestId } ?: acceptedRequests[requestId]
+        val request = currentRequests.values.firstOrNull { it.id == requestId }
         val cancelQueued = waiting != null && !waiting.cancelled
         if (waiting != null && cancelQueued) {
             waiting.cancelled = true
@@ -175,8 +176,8 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         val cancelled = try { session.cancel(requestId) } catch (error: Exception) { callback(Result.failure(error)); return@onMain }
         if (cancelled) {
             receipts.removeAll { it.second.requestId == requestId }
-            if (currentRequest === request) currentRequest = null
-            acceptedRequests.remove(requestId)
+            request?.cancelled = true
+            currentRequests.entries.removeAll { it.value === request }
             submitted(request ?: Request(requestId, desiredOwner), WechatStatus.CANCELLED)
         } else if (waiting != null && cancelQueued) {
             submitted(waiting, WechatStatus.CANCELLED)
@@ -215,9 +216,8 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
             else -> return
         }
         val pending = try { session.consume(resp.transaction, kind, (resp as? SendAuth.Resp)?.state) } catch (_: Exception) { null } ?: return
-        val request = currentRequest?.takeIf { it.id == pending.requestId } ?: acceptedRequests.remove(pending.requestId)
+        val request = currentRequests.remove(kind)
         val owner = request?.owner
-        if (currentRequest === request) currentRequest = null
         val code = (resp as? SendAuth.Resp)?.code?.takeIf { resp.errCode == 0 && it.isNotBlank() }
         val page = (resp as? WXOpenBusinessView.Resp)?.extMsg?.let { runCatching { JSONObject(it).optString("result").takeIf(String::isNotBlank) }.getOrNull() }
         deliver(WechatReceipt(pending.requestId, kind, if (kind == WechatKind.AUTHORIZATION && resp.errCode == 0 && code == null) -1 else resp.errCode, code, page), owner)
@@ -240,14 +240,24 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
     }
     private fun begin(request: Request, kind: WechatKind, state: String? = null, submissionOnly: Boolean = false): Boolean {
         if (request.id in cancelledBeforeBegin) { submitted(request, WechatStatus.INVALID_CONTENT); return false }
-        val rejected = try { session.begin(request.id, request.transaction, kind, state, submissionOnly) } catch (_: Exception) { WechatStatus.FAILED }
-        if (rejected != null) { submitted(request, rejected); return false }
-        currentRequest = request
         val unavailable = runCatching {
             if (!registered) WechatStatus.FAILED else if (!api.isWXAppInstalled) WechatStatus.NOT_INSTALLED else null
         }.getOrElse { WechatStatus.FAILED }
-        if (unavailable != null) { fail(request, unavailable); return false }
-        return true
+        if (unavailable != null) { submitted(request, unavailable); return false }
+        val previous = try { session.current(kind) } catch (_: Exception) {
+            submitted(request, WechatStatus.FAILED)
+            return false
+        }
+        val rejected = try { session.begin(request.id, request.transaction, kind, state, submissionOnly) } catch (_: Exception) { WechatStatus.FAILED }
+        if (rejected != null) { submitted(request, rejected); return false }
+        val old = currentRequests.put(kind, request)
+        if (previous != null) {
+            old?.cancelled = true
+            receipts.removeAll { it.second.requestId == previous.requestId }
+            // 先安装新轮再通知旧轮；取消回调重入时不能把第三轮覆盖掉。
+            submitted(old ?: Request(previous.requestId, null), WechatStatus.CANCELLED)
+        }
+        return !request.cancelled && session.isCurrent(request.id)
     }
     private fun sendShare(request: Request, message: WXMediaMessage, scene: WechatScene, recipientId: String? = null, senderOpenId: String? = null) {
         if (scene == WechatScene.TIMELINE && api.wxAppSupportAPI < Build.TIMELINE_SUPPORTED_SDK_INT) { fail(request, WechatStatus.UNSUPPORTED); return }
@@ -263,22 +273,20 @@ class AndroidWechatClient(context: Context, appId: String, listener: WechatListe
         })
     }
     private fun send(request: Request, sdkRequest: BaseReq) {
+        if (request.cancelled || !session.isCurrent(request.id)) return
         sdkRequest.transaction = request.transaction
         val accepted = runCatching { sdkRequest.checkArgs() && api.sendReq(sdkRequest) }.getOrDefault(false)
+        if (request.cancelled) return
         if (accepted) {
-            if (session.finishSubmission(request.id)) {
-                if (currentRequest === request) currentRequest = null
-                if (session.isCurrent(request.id)) {
-                    acceptedRequests[request.id] = request
-                    if (acceptedRequests.size > 64) acceptedRequests.remove(acceptedRequests.keys.first())
-                }
-            }
+            session.finishSubmission(request.id)
+            if (!session.isCurrent(request.id)) currentRequests.entries.removeAll { it.value === request }
             submitted(request, WechatStatus.REQUESTED)
         } else fail(request, WechatStatus.FAILED)
     }
     private fun fail(request: Request, status: WechatStatus) {
+        if (request.cancelled) return
         val cleared = runCatching { session.cancel(request.id) }.getOrDefault(false)
-        if (cleared) currentRequest = null
+        if (cleared) currentRequests.entries.removeAll { it.value === request }
         submitted(request, if (cleared) status else WechatStatus.FAILED)
     }
     private fun checkMain() { check(Looper.myLooper() == Looper.getMainLooper()) { "WeChat must run on main thread" } }

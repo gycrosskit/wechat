@@ -1,116 +1,72 @@
 package io.github.gycrosskit.wechat
 import kotlin.test.*
 class WechatSessionTest {
-    @Test fun acceptedWebpagesShareReceiptTrackingWithTransfersWithoutBlocking() {
+    @Test fun typesHaveIndependentCurrentRoundsAndOldCallbacksCannotConsumeReplacements() {
         val session = WechatSession()
-        for (index in 0..65) {
-            val kind = if (index % 2 == 0) WechatKind.SHARE else WechatKind.MERCHANT_TRANSFER
-            assertNull(session.begin("accepted-$index", "tx-$index", kind))
-            assertEquals(WechatStatus.BUSY, session.begin("overlap-$index", "overlap-tx-$index", WechatKind.SHARE))
-            assertTrue(session.finishSubmission("accepted-$index"))
+        for (kind in WechatKind.entries) {
+            val state = if (kind == WechatKind.AUTHORIZATION) "state" else null
+            assertNull(session.begin(kind.name, "tx-${kind.name}", kind, state))
+            assertTrue(session.finishSubmission(kind.name))
         }
-        assertFalse(session.isCurrent("accepted-0"))
-        assertNull(session.consume("tx-0", WechatKind.SHARE))
-        assertNull(session.begin("auth", "tx-auth", WechatKind.AUTHORIZATION, "state"))
-        assertNull(session.consume("tx-64", WechatKind.AUTHORIZATION, "state"))
-        assertEquals("accepted-64", session.consume("tx-64", WechatKind.SHARE)?.requestId)
-        assertNull(session.consume("tx-64", WechatKind.SHARE))
-        assertTrue(session.cancel("accepted-65"))
-        assertFalse(session.finishSubmission("accepted-65"))
-        assertNull(session.consume("tx-65", WechatKind.MERCHANT_TRANSFER))
-        assertTrue(session.isCurrent("auth"))
-        assertEquals("auth", session.consume("tx-auth", WechatKind.AUTHORIZATION, "state")?.requestId)
+        assertNull(session.begin("new-share", "tx-new-share", WechatKind.SHARE))
+        assertFalse(session.cancel(WechatKind.SHARE.name))
+        assertFalse(session.finishSubmission(WechatKind.SHARE.name))
+        assertNull(session.consume("tx-SHARE", WechatKind.SHARE))
+        assertEquals("new-share", session.consume("tx-new-share", WechatKind.SHARE)?.requestId)
+        assertEquals("AUTHORIZATION", session.consume("tx-AUTHORIZATION", WechatKind.AUTHORIZATION, "state")?.requestId)
+        assertEquals("MERCHANT_TRANSFER", session.consume("tx-MERCHANT_TRANSFER", WechatKind.MERCHANT_TRANSFER)?.requestId)
     }
-    @Test fun acceptedWebpageRetainsTrustedPendingWhenStoreClearFails() {
-        var failClear = true
-        val session = WechatSession(object : WechatRequestStore {
-            override fun load(): WechatPendingRequest? = null
-            override fun save(request: WechatPendingRequest?) {
-                if (request == null && failClear) error("clear failed")
-            }
-        })
-        assertNull(session.begin("web", "tx-web", WechatKind.SHARE))
-        assertFalse(session.finishSubmission("web"))
-        assertEquals(WechatStatus.BUSY, session.begin("auth", "tx-auth", WechatKind.AUTHORIZATION, "state"))
-        assertTrue(session.isCurrent("web"))
-        failClear = false
-        assertTrue(session.finishSubmission("web"))
-        assertNull(session.begin("auth", "tx-auth", WechatKind.AUTHORIZATION, "state"))
-        assertTrue(session.cancel("web"))
-        assertTrue(session.isCurrent("auth"))
-    }
-    @Test fun acceptedTransfersKeepReceiptsWithoutBlockingNewRequests() {
+
+    @Test fun imagesShareTheSameRoundButDoNotWaitForFinalReceipts() {
         val session = WechatSession()
-        assertNull(session.begin("transfer-one", "tx-one", WechatKind.MERCHANT_TRANSFER))
-        assertEquals(WechatStatus.BUSY, session.begin("during-send", "tx-sending", WechatKind.MERCHANT_TRANSFER))
-        assertTrue(session.finishSubmission("transfer-one"))
-        assertNull(session.begin("transfer-two", "tx-two", WechatKind.MERCHANT_TRANSFER))
-        assertTrue(session.finishSubmission("transfer-two"))
-        assertNull(session.begin("auth", "tx-auth", WechatKind.AUTHORIZATION, "state"))
-        assertEquals("transfer-one", session.consume("tx-one", WechatKind.MERCHANT_TRANSFER)?.requestId)
-        assertTrue(session.isCurrent("auth"))
-        assertTrue(session.cancel("transfer-two"))
-        assertTrue(session.isCurrent("auth"))
-        assertNull(session.consume("tx-two", WechatKind.MERCHANT_TRANSFER))
-        assertEquals("auth", session.consume("tx-auth", WechatKind.AUTHORIZATION, "state")?.requestId)
-    }
-    @Test fun oldTransfersCannotClearNewTransferStillSubmitting() {
-        val session = WechatSession()
-        for (id in listOf("one", "two")) {
-            assertNull(session.begin(id, "tx-$id", WechatKind.MERCHANT_TRANSFER))
-            assertTrue(session.finishSubmission(id))
-        }
-        assertNull(session.begin("new", "tx-new", WechatKind.MERCHANT_TRANSFER))
-        assertEquals("one", session.consume("tx-one", WechatKind.MERCHANT_TRANSFER)?.requestId)
-        assertTrue(session.cancel("two"))
-        assertTrue(session.isCurrent("new"))
-        assertEquals(WechatStatus.BUSY, session.begin("overlap", "tx-overlap", WechatKind.MERCHANT_TRANSFER))
-        assertTrue(session.finishSubmission("new"))
-    }
-    @Test fun acceptedTransferKeepsTrustedPendingWhenStoreClearFails() {
-        var failClear = true
-        val session = WechatSession(object : WechatRequestStore {
-            override fun load(): WechatPendingRequest? = null
-            override fun save(request: WechatPendingRequest?) {
-                if (request == null && failClear) error("clear failed")
-            }
-        })
-        assertNull(session.begin("accepted", "tx-accepted", WechatKind.MERCHANT_TRANSFER))
-        assertFalse(session.finishSubmission("accepted"))
-        assertTrue(session.isCurrent("accepted"))
-        assertEquals(WechatStatus.BUSY, session.begin("next", "tx-next", WechatKind.AUTHORIZATION, "state"))
-        failClear = false
-        assertTrue(session.finishSubmission("accepted"))
-        assertNull(session.begin("after-clear", "tx-after-clear", WechatKind.AUTHORIZATION, "state"))
-    }
-    @Test fun imageSubmissionDoesNotPersistOrWaitForFinalReceipt() {
-        val saved = mutableListOf<WechatPendingRequest?>()
-        val session = WechatSession(object : WechatRequestStore {
-            override fun load(): WechatPendingRequest? = null
-            override fun save(request: WechatPendingRequest?) { saved.add(request) }
-        })
-        repeat(3) { index ->
-            val id = "image-$index"
-            assertNull(session.begin(id, "image-tx-$index", WechatKind.SHARE, submissionOnly = true))
-            assertEquals(WechatStatus.BUSY, session.begin("overlap-$index", "overlap-tx-$index", WechatKind.SHARE))
-            assertNull(session.consume("image-tx-$index", WechatKind.SHARE))
-            assertTrue(session.isCurrent(id))
-            assertFalse(session.finishSubmission("old-id"))
-            assertTrue(session.finishSubmission(id))
-            assertFalse(session.isCurrent(id))
-        }
-        assertTrue(saved.isEmpty())
         assertNull(session.begin("web", "web-tx", WechatKind.SHARE))
-        assertNull(session.consume("image-tx-2", WechatKind.SHARE))
-        assertTrue(session.isCurrent("web"))
-        assertTrue(session.finishSubmission("web"))
-        assertNotNull(session.consume("web-tx", WechatKind.SHARE))
+        assertNull(session.begin("image", "image-tx", WechatKind.SHARE, submissionOnly = true))
+        assertNull(session.consume("web-tx", WechatKind.SHARE))
+        assertNull(session.consume("image-tx", WechatKind.SHARE))
+        assertTrue(session.finishSubmission("image"))
+        assertFalse(session.isCurrent("image"))
+        assertNull(session.begin("next", "next-tx", WechatKind.SHARE))
+        assertNull(session.consume("image-tx", WechatKind.SHARE))
+        assertTrue(session.isCurrent("next"))
+    }
+
+    @Test fun authorizationJournalIsNotOverwrittenOrClearedByOtherTypes() {
+        val store = MemoryStore()
+        val session = WechatSession(store)
         assertNull(session.begin("auth", "auth-tx", WechatKind.AUTHORIZATION, "state"))
-        assertNull(session.consume("image-tx-2", WechatKind.SHARE))
-        assertNotNull(session.consume("auth-tx", WechatKind.AUTHORIZATION, "state"))
+        assertNull(session.begin("web", "web-tx", WechatKind.SHARE))
         assertNull(session.begin("transfer", "transfer-tx", WechatKind.MERCHANT_TRANSFER))
-        assertNull(session.consume("image-tx-2", WechatKind.SHARE))
-        assertNotNull(session.consume("transfer-tx", WechatKind.MERCHANT_TRANSFER))
+        assertNotNull(session.consume("web-tx", WechatKind.SHARE))
+        assertTrue(session.cancel("transfer"))
+        assertEquals("auth", store.saved?.requestId)
+        assertEquals("auth", WechatSession(store).consume("auth-tx", WechatKind.AUTHORIZATION, "state")?.requestId)
+        assertNull(store.saved)
+    }
+
+    @Test fun failedAuthorizationReplacementPreservesOldRoundAndOtherTypes() {
+        val store = MemoryStore()
+        val session = WechatSession(store)
+        assertNull(session.begin("old", "old-tx", WechatKind.AUTHORIZATION, "old-state"))
+        assertNull(session.begin("web", "web-tx", WechatKind.SHARE))
+        store.failSave = true
+        assertEquals(WechatStatus.FAILED, session.begin("new", "new-tx", WechatKind.AUTHORIZATION, "new-state"))
+        assertEquals("old", session.current(WechatKind.AUTHORIZATION)?.requestId)
+        assertEquals("old", store.saved?.requestId)
+        assertTrue(session.isCurrent("web"))
+        store.failSave = false
+        assertNull(session.begin("after", "after-tx", WechatKind.AUTHORIZATION, "after-state"))
+        assertFalse(session.cancel("old"))
+        assertNull(session.consume("old-tx", WechatKind.AUTHORIZATION, "old-state"))
+        assertEquals("after", store.saved?.requestId)
+    }
+
+    @Test fun restoredLegacyJournalCannotClearNewAuthorization() {
+        val store = MemoryStore().apply { saved = WechatPendingRequest("legacy", "legacy-tx", WechatKind.SHARE) }
+        val session = WechatSession(store)
+        assertNull(session.begin("auth", "auth-tx", WechatKind.AUTHORIZATION, "state"))
+        assertEquals("legacy", session.consume("legacy-tx", WechatKind.SHARE)?.requestId)
+        assertEquals("auth", store.saved?.requestId)
+        assertNotNull(session.consume("auth-tx", WechatKind.AUTHORIZATION, "state"))
     }
 
     @Test fun utf16BoundariesApplyToRequestIdsAndTrustedRestoration() {
@@ -167,14 +123,13 @@ class WechatSessionTest {
     @Test fun stateAndTransactionMustMatchAndOnlyConsumeOnce() {
         val s = WechatSession()
         assertNull(s.begin("one", "tx-one", WechatKind.AUTHORIZATION, "secure-state"))
-        assertEquals(WechatStatus.BUSY, s.begin("two", "tx-two", WechatKind.SHARE))
+        assertNull(s.begin("two", "tx-two", WechatKind.SHARE))
         assertNull(s.consume("tx-one", WechatKind.AUTHORIZATION, "forged"))
         assertNull(s.consume("tx-one", WechatKind.AUTHORIZATION, null))
         assertNull(s.consume("wrong", WechatKind.AUTHORIZATION, "secure-state"))
         assertNotNull(s.consume("tx-one", WechatKind.AUTHORIZATION, "secure-state"))
         assertNull(s.consume("tx-one", WechatKind.AUTHORIZATION, "secure-state"))
         assertEquals(WechatStatus.INVALID_CONTENT, s.begin("one", "new", WechatKind.SHARE))
-        assertNull(s.begin("two", "tx-two", WechatKind.SHARE))
         assertFalse(s.cancel("one"))
         assertTrue(s.cancel("two"))
         assertNull(s.begin("three", "tx-three", WechatKind.SHARE))
@@ -189,7 +144,7 @@ class WechatSessionTest {
         }
         assertNull(WechatSession(store).begin("cold", "random-transaction", WechatKind.AUTHORIZATION, "secret-state"))
         val restored = WechatSession(store)
-        assertEquals(WechatStatus.BUSY, restored.begin("other", "other-tx", WechatKind.SHARE))
+        assertNull(restored.begin("other", "other-tx", WechatKind.SHARE))
         assertNull(restored.consume("unknown", WechatKind.AUTHORIZATION, "secret-state"))
         assertNull(restored.consume("random-transaction", WechatKind.SHARE))
         assertNull(restored.consume("random-transaction", WechatKind.AUTHORIZATION, "forged"))
@@ -209,14 +164,14 @@ class WechatSessionTest {
             override fun save(request: WechatPendingRequest?) { check(!fail) }
         }
         val session = WechatSession(store)
-        assertEquals(WechatStatus.FAILED, session.begin("fail", "fail-tx", WechatKind.SHARE))
+        assertEquals(WechatStatus.FAILED, session.begin("fail", "fail-tx", WechatKind.AUTHORIZATION, "state"))
         store.fail = false
-        assertNull(session.begin("one", "one-tx", WechatKind.SHARE))
+        assertNull(session.begin("one", "one-tx", WechatKind.AUTHORIZATION, "state"))
         store.fail = true
-        assertFails { session.consume("one-tx", WechatKind.SHARE) }
+        assertFails { session.consume("one-tx", WechatKind.AUTHORIZATION, "state") }
         assertTrue(session.isCurrent("one"))
         store.fail = false
-        assertNotNull(session.consume("one-tx", WechatKind.SHARE))
+        assertNotNull(session.consume("one-tx", WechatKind.AUTHORIZATION, "state"))
     }
 
     @Test fun failedCancelKeepsTrustedPendingForLateReceiptOrRetry() {
@@ -236,19 +191,29 @@ class WechatSessionTest {
         assertFails { session.cancel("late") }
         assertTrue(session.isCurrent("late"))
         assertEquals("late", store.saved?.requestId)
-        assertEquals(WechatStatus.BUSY, session.begin("new", "new-tx", WechatKind.SHARE))
+        assertNull(session.begin("new", "new-tx", WechatKind.SHARE))
         store.failClear = false
         assertEquals("late", session.consume("late-tx", WechatKind.AUTHORIZATION, "state")?.requestId)
         assertFalse(session.cancel("late"))
-        assertNull(session.begin("retry", "retry-tx", WechatKind.SHARE))
+        assertNull(session.begin("retry", "retry-tx", WechatKind.AUTHORIZATION, "retry-state"))
         store.failClear = true
         assertFails { session.cancel("retry") }
         store.failClear = false
         assertTrue(session.cancel("retry"))
         assertNull(store.saved)
-        assertNull(session.consume("retry-tx", WechatKind.SHARE))
+        assertNull(session.consume("retry-tx", WechatKind.AUTHORIZATION, "retry-state"))
     }
 
+}
+
+private class MemoryStore : WechatRequestStore {
+    var saved: WechatPendingRequest? = null
+    var failSave = false
+    override fun load() = saved
+    override fun save(request: WechatPendingRequest?) {
+        check(!failSave)
+        saved = request
+    }
 }
 
 class WechatShareContentTest {
@@ -263,5 +228,41 @@ class WechatShareContentTest {
         kotlin.test.assertEquals("", wechatText("", 256, 512))
         kotlin.test.assertEquals("e\u0301".repeat(128), wechatText("e\u0301".repeat(300), 256, 512))
         kotlin.test.assertEquals("a", wechatText("a😀", 2, 512))
+    }
+}
+
+class WechatReceiptTest {
+    @Test fun routingUsesSdkEvidenceWithoutPromotingCandidates() {
+        val verified = WechatReceipt("original", WechatKind.SHARE, 0)
+        assertEquals("original", verified.routingRequestId)
+        val candidate = verified.copy(requestId = null, candidateRequestId = "candidate", attribution = WechatAttribution.SINGLE_PENDING)
+        assertEquals("candidate", candidate.routingRequestId)
+        assertNull(candidate.requestId)
+        assertEquals(WechatAttribution.SINGLE_PENDING, candidate.attribution)
+        for (kind in listOf(WechatKind.AUTHORIZATION, WechatKind.MERCHANT_TRANSFER)) {
+            assertNull(candidate.copy(kind = kind).routingRequestId)
+        }
+        assertNull(verified.copy(attribution = WechatAttribution.UNATTRIBUTED).routingRequestId)
+        assertNull(verified.copy(requestId = " ").routingRequestId)
+    }
+
+    @Test fun transferPageFactsPreserveCancellationFailureAndUnknown() {
+        val cases = listOf(
+            Triple(0, "success", WechatTransferPageStatus.SUCCESS),
+            Triple(0, "fail", WechatTransferPageStatus.FAILED),
+            Triple(-1, null, WechatTransferPageStatus.FAILED),
+            Triple(-1, "success", WechatTransferPageStatus.FAILED),
+            Triple(-2, "success", WechatTransferPageStatus.CANCELLED),
+            Triple(-1, "cancel", WechatTransferPageStatus.CANCELLED),
+            Triple(0, null, WechatTransferPageStatus.UNKNOWN),
+            Triple(0, "future-result", WechatTransferPageStatus.UNKNOWN),
+        )
+        for ((code, page, expected) in cases) {
+            assertEquals(expected, WechatTransferPageStatus.from(code, page))
+            val receipt = WechatReceipt(null, WechatKind.MERCHANT_TRANSFER, code, pageResult = page)
+            assertEquals(expected, receipt.transferPageStatus)
+            assertNull(receipt.routingRequestId)
+            assertEquals(WechatTransferPageStatus.UNKNOWN, receipt.copy(kind = WechatKind.SHARE).transferPageStatus)
+        }
     }
 }

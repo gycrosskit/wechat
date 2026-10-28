@@ -1,8 +1,8 @@
 # GY CrossKit Wechat
 
-> 当前源码候选统一为 **1.0.1**：Maven（core/Kuikly）、iOS Pod 与 OHPM 使用同版；尚未发布，示例坐标须待发布后远程消费。本地验证使用显式源码/本地 HAR，Kuikly 基线为 2.29.1，真机与新版本远程消费另验。
+> 本分支包含未发布的按类型当前轮修复；本次不修改渠道版本或发布记录。下方安装示例与历史验收对应各自原始标签，不能证明本任务源码已经远程可用。Kuikly 基线为 2.29.1。
 
-未发布源码修复：网页分享在 SDK 受理后释放发送占用，不再等待最终回执才能重试。Android/OHOS 复用转账的有界回执关联；iOS 保留单笔候选，旧分享无回执时再次分享后只能交付 `UNATTRIBUTED`。本修复尚未发版，不包含在下述已冻结版本内，也不升级和合康正式提审依赖。
+当前分支包含未发布的按类型当前轮及通用接线下沉修复：登录、分享、转账互不等待；同类型新请求替换旧轮，并通知本地取消，不伪造 SDK 回执。图片与网页共用分享轮次；通用回执投影、平台归属能力、Base64 直通和 OHOS 监听恢复由组件统一提供。iOS 无 transaction 的候选限制保留。安装示例、已发布版本与历史验收不包含本任务改动，宿主远程版本和正式提审依赖未升级。合同见[按类型当前轮](docs/功能与平台差异.md#按类型当前轮合同未发布)。
 
 历史修复组合：Maven `0.1.10-rc.1`、HAR `0.1.9-rc.1`，Git Pod / SPM 保留 `native-0.1.9`（Pod `0.1.9`）。Android/OHOS 转账受理后不再等待最终回执才能重试，OHOS 使用实际调用方 Ability context。发布与远程消费状态分别见 [Maven Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.10-rc.1) 和 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-0.1.9-rc.1)；发布候选声明不能替代渠道可消费及设备验收。
 
@@ -79,7 +79,7 @@ sequenceDiagram
     end
 ```
 
-类型图聚焦 Kotlin Android 链路，`WechatSession` 分别持有提交等待和已受理转账的回执关联；监听器分别接收受理与回执。图片仅等待 SDK 受理；iOS 图片受理或收到图片回执、或已发送网页取消后不再提供分享候选，后续分享仍可提交。Kuikly `dispose()` 移除页面监听和 callback，原生 client 仍为进程级实例；取消是否成功必须等待同版原生确认。
+类型图聚焦 Kotlin Android 链路，`WechatSession` 按类型持有当前轮；监听器分别接收受理、本地取消与 SDK 回执。图片仅等待 SDK 受理；iOS 图片受理或收到图片回执、或已发送网页取消后不再提供分享候选，后续分享仍可提交。Kuikly `dispose()` 移除页面监听和 callback，原生 client 仍为进程级实例；取消是否成功必须等待同版原生确认。
 
 ```mermaid
 classDiagram
@@ -197,7 +197,7 @@ OHOS 在 EntryAbility 配置 `WechatClient.configure(appId, context, trustedStor
 
 ## 必须了解的边界
 
-- 本版转账的发送互斥只持续到 SDK 提交结束；受理后允许再次拉起，即使微信未登录或用户直接返回、没有最终回执。Android/OHOS 最多保留 64 笔进程内 transaction/requestId 关联，用于拒绝错误、重复或迟到回执；它不阻塞新请求，不记录红包领取状态。已受理转账不再占用持久 journal；跨进程业务状态由服务端核实。存储清除失败时保留可信等待，不能伪造失败诱发重复发送。iOS 转账保持提交结束即释放、回执 UNATTRIBUTED 的原有合同。
+- 转账与登录、分享各保留当前轮；再次转账替换旧轮本地等待，不等待上一笔 SDK 回执。Android/OHOS 按当前 transaction/requestId 匹配，iOS 仍为提交结束即释放、回执 UNATTRIBUTED；转账页 success 不表示到账。新转账不写 journal，也不会覆盖 OAuth journal。
 
 - Android 构造、授权、分享、转账、取消与 attach/detach 允许任意线程；主线程即时执行，后台排队，图片计算仍在专用 imageExecutor。Unit 返回不代表 SDK 受理；同步 Boolean `handleIntent` 仍限定 Main，兼容旧 false 表示未处理（含 SDK 异常），后台必须使用 callback 重载，不阻塞等待。
 - Android Main 取消尚未执行的入队请求后，该请求不会打开微信。`cancel` 返回不保证清除；存储清除失败保留 pending/owner，不伪造 CANCELLED 或 FAILED 终态，未知 ID 不通知终态。无 owner 的回执支持晚监听；有 owner 的迟回执只交给同一 listener（detach 后重新 attach 也可回放），新 listener 不接旧 owner 结果。

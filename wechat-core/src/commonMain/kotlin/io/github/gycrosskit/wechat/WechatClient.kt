@@ -6,8 +6,26 @@ enum class WechatScene { SESSION, TIMELINE }
 enum class WechatAttribution { VERIFIED, SINGLE_PENDING, UNATTRIBUTED }
 /** 微信授权、分享或商家转账确认页；转账回执不表示到账。 */
 enum class WechatKind { AUTHORIZATION, SHARE, MERCHANT_TRANSFER }
-/** 提交状态；REQUESTED 只表示 SDK 受理，图片仅交付此阶段结果，其余回执另行交付。 */
+/** 提交状态；REQUESTED 只表示 SDK 受理。BUSY 保留兼容同 ID 重复持有，不作为跨类型互斥。 */
 enum class WechatStatus { REQUESTED, BUSY, NOT_INSTALLED, UNSUPPORTED, INVALID_CONTENT, FAILED, CANCELLED }
+
+/** 转账确认页的 SDK 结果；SUCCESS 仅表示页面结果，不证明到账。 */
+enum class WechatTransferPageStatus {
+    SUCCESS, FAILED, CANCELLED, UNKNOWN;
+
+    companion object {
+        /** 只解释厂商事实，文案、服务端刷新和业务完成由宿主决定。 */
+        fun from(errorCode: Int, pageResult: String?): WechatTransferPageStatus = when {
+            errorCode == -2 || pageResult == "cancel" -> CANCELLED
+            errorCode != 0 || pageResult == "fail" -> FAILED
+            pageResult == "success" -> SUCCESS
+            else -> UNKNOWN
+        }
+    }
+}
+
+/** 平台是否提供可精确归属的转账回执；不取决于当前微信是否已安装。 */
+expect val supportsMerchantTransferReceiptOwnership: Boolean
 
 /**
  * requestId 为空时，平台 SDK 无法证明回执属于哪一次请求。
@@ -29,7 +47,19 @@ data class WechatReceipt(
     /** iOS 单笔等待候选不是 SDK 证明；任务动作由宿主按证据决定。 */
     val candidateRequestId: String? = null,
     val attribution: WechatAttribution = if (requestId != null) WechatAttribution.VERIFIED else WechatAttribution.UNATTRIBUTED,
-)
+) {
+    /** 允许投递的原请求或分享候选；不会把候选提升为 VERIFIED。 */
+    val routingRequestId: String? get() = when (attribution) {
+        WechatAttribution.VERIFIED -> requestId
+        WechatAttribution.SINGLE_PENDING -> candidateRequestId.takeIf { kind == WechatKind.SHARE }
+        WechatAttribution.UNATTRIBUTED -> null
+    }?.takeIf(String::isNotBlank)
+
+    /** 非转账回执无页面状态，不能因同名原始字段被解释为转账成功。 */
+    val transferPageStatus: WechatTransferPageStatus get() =
+        if (kind == WechatKind.MERCHANT_TRANSFER) WechatTransferPageStatus.from(errorCode, pageResult)
+        else WechatTransferPageStatus.UNKNOWN
+}
 
 /**
  * 仅允许从同一 App 的可信本地存储恢复；不能从 Intent、Want 或页面参数构造。
@@ -58,6 +88,7 @@ interface WechatListener {
 
 /**
  * requestId 由宿主生成，本实例内不能复用；原生客户端由宿主持有进程级实例，Kuikly Module 由页面拥有。
+ * 登录、分享、转账各保留当前一轮；同类型新请求替换旧轮，不等待其他类型结束。图片和网页共用分享轮次。
  * Android 入口可从任意线程调用，SDK、store、状态与 listener 回调串行到 Main；iOS 遵守原生 Main 约束。
  * Kuikly Module 的入口及回调由宿主保持在页面线程，不自动切换到原生 Main。
  * Unit 返回不保证已发送，必须等 onSubmitted(REQUESTED) 确认 SDK 真实受理，再等 onReceipt 处理最终回执。

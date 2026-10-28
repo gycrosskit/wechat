@@ -129,9 +129,11 @@ public final class WechatModule: KRBaseModule {
             let submission = submissions.removeValue(forKey: id)
             let received = receivedBeforeSubmission.remove(id) != nil
             if status != "requested" || submission?.awaitsReceipt == false || received || bufferedAuthorization?.requestID != id && client?.hasPendingRequest(requestID: id) == false { ids.remove(id) }
-            return submission?.callback
+            return submission?.callback ?? (status == "cancelled" ? listener : nil)
         }
-        if active { deliver(["status": status], callback: callback) }
+        var result: [String: Any] = ["status": status]
+        if status == "cancelled" { result["requestId"] = id }
+        if active { deliver(result, callback: callback) }
     }
     private func receipt(_ value: WechatReceipt) {
         // 微信回跳可能早于 App 活跃；凭据交回 Renderer 前仍须保留原页面 owner。
