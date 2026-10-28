@@ -36,6 +36,12 @@ def har(path, version=VERSION, extra=None):
 
 
 class HarReleaseTest(unittest.TestCase):
+    def test_source_readme_installs_exact_manifest_identity(self):
+        package = ROOT / 'ohos/wechat-native'
+        manifest = json.loads((package / 'oh-package.json5').read_text())
+        command = 'ohpm install ' + manifest['name'] + '@' + manifest['version']
+        self.assertIn(command, (package / 'README.md').read_text())
+
     def test_archive_identity_and_untrusted_members(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'release.har'
