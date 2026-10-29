@@ -181,3 +181,27 @@ do {
     module.invalidate()
 }
 print("Production receiver defers inactive OAuth until activation; cancellation and early submission retain exact ownership")
+
+// Replacement cancellation is control flow; after REQUESTED it must still reach the listen channel.
+do {
+    let client = WechatClient()
+    WechatModule.clientProvider = { client }
+    let module = WechatModule()
+    var controls = [[String: Any]](), submissions = [String]()
+    _ = module.hrv_call(withMethod: "listen", params: "{}") { controls.append($0 as! [String: Any]) }
+    _ = module.hrv_call(withMethod: "authorize", params: "{\"requestId\":\"waiting-replacement\"}") { submissions.append(($0 as! [String: Any])["status"] as! String) }
+    client.pending.remove("waiting-replacement")
+    client.emitSubmitted("waiting-replacement", "cancelled")
+    precondition(submissions == ["cancelled"] && controls.isEmpty && !client.hasModuleOwner(requestID: "waiting-replacement"))
+    _ = module.hrv_call(withMethod: "authorize", params: "{\"requestId\":\"accepted-replacement\"}") { submissions.append(($0 as! [String: Any])["status"] as! String) }
+    client.emitSubmitted("accepted-replacement", "requested")
+    client.pending.remove("accepted-replacement")
+    client.emitSubmitted("accepted-replacement", "cancelled")
+    precondition(submissions == ["cancelled", "requested"] && controls.count == 1)
+    precondition(controls[0]["status"] as? String == "cancelled" && controls[0]["requestId"] as? String == "accepted-replacement" && controls[0]["kind"] == nil)
+    precondition(!client.hasModuleOwner(requestID: "accepted-replacement"))
+    client.emitSubmitted("accepted-replacement", "cancelled")
+    precondition(controls.count == 1)
+    module.invalidate()
+}
+print("Production Swift receiver: replacement cancellation finishes pending submission or reaches listen as one control event")

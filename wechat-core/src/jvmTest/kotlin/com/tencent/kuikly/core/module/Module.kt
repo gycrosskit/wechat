@@ -7,7 +7,7 @@ typealias CallbackRef = Int
 /** Kuikly 的 once callback 返回后释放；保留 queued 闭包以验证 dispose 门禁。 */
 abstract class Module {
     data class ReturnValue(val callbackRef: CallbackRef?)
-    data class Call(val method: String, val callbackRef: CallbackRef?, val deliver: (JSONObject?) -> Unit)
+    data class Call(val method: String, val callbackRef: CallbackRef?, val deliver: (JSONObject?) -> Unit, val params: Any?)
     val calls = mutableListOf<Call>()
     val liveCallbacks = mutableSetOf<CallbackRef>()
     var synchronousCancelStatus: String? = null
@@ -16,10 +16,10 @@ abstract class Module {
     fun toNative(keepCallbackAlive: Boolean, method: String, params: Any?, callback: ((JSONObject?) -> Unit)?, syncCall: Boolean): ReturnValue {
         val ref = if (callback != null) ++nextRef else null
         ref?.let(liveCallbacks::add)
-        val call = Call(method, ref) { payload ->
+        val call = Call(method, ref, { payload ->
             callback?.invoke(payload)
             if (!keepCallbackAlive) ref?.let(liveCallbacks::remove)
-        }
+        }, params)
         calls += call
         if (method == "cancel") synchronousCancelStatus?.let { status ->
             call.deliver(JSONObject().apply { put("status", status) })

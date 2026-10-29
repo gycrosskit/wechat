@@ -18,10 +18,10 @@ export interface WechatRequestStore {
   /** 原子保存；null 必须持久清除，失败阻止提交和结果消费。 */
   save(request: WechatPendingRequest | null): void;
 }
-interface Pending { id: string; transaction: string; kind: string; state: string; path: string; cancelled: boolean; context: common.UIAbilityContext; }
+interface Pending { id: string; transaction: string; kind: string; state: string; path: string; cancelled: boolean; context: common.UIAbilityContext; cancelWaiting: (() => void) | null; }
 interface PageResult { result?: string; }
 type Listener = (receipt: WechatReceipt) => void;
-interface ListenerRegistration { ids: Set<string> | null; }
+interface ListenerRegistration { ids: Set<string> | null; onSubmitted: ((id: string, status: WechatStatus) => void) | null; }
 class QuietLog implements wx.LogInterface { print(_level: wx.LogLevel, _tag: string, _message: string): void {} }
 
 /** 宿主配置一次后，认证、分享和 EntryAbility 回跳共用同一 SDK 入口。 */
@@ -32,8 +32,8 @@ export class WechatClient implements wx.WXApiEventHandler {
   private store: WechatRequestStore | null;
   private receipts: WechatReceipt[] = [];
   private usedTransactions: Set<string> = new Set();
-  private pending: Pending | null = null;
-  private acceptedRequests: Map<string, Pending> = new Map();
+  private currentRequests: Map<string, Pending> = new Map();
+  private journal: Pending | null = null;
   private imageFiles: Map<string, string> = new Map();
   private usedIds: Set<string> = new Set();
   private listeners: Map<Listener, ListenerRegistration> = new Map();
@@ -43,7 +43,8 @@ export class WechatClient implements wx.WXApiEventHandler {
     this.store = store;
     const saved = store?.load();
     if (saved && this.validRequest(saved)) {
-      this.pending = { id: saved.requestId, transaction: saved.transaction, kind: saved.kind, state: saved.state, path: '', cancelled: false, context };
+      const pending: Pending = { id: saved.requestId, transaction: saved.transaction, kind: saved.kind, state: saved.state, path: '', cancelled: false, context, cancelWaiting: null };
+      this.currentRequests.set(saved.kind, pending); this.journal = pending;
       this.usedIds.add(saved.requestId); this.usedTransactions.add(saved.transaction);
     }
     this.appId = appId; this.context = context;
@@ -78,11 +79,11 @@ export class WechatClient implements wx.WXApiEventHandler {
     this.listeners.forEach((registration: ListenerRegistration, listener: Listener) => {
       if (listener !== owner && registration.ids?.has(id)) { owned = true; }
     });
-    return !owned && (this.pending?.id === id || this.acceptedRequests.has(id) || this.receipts.some((receipt: WechatReceipt) => receipt.requestId === id));
+    return !owned && (Array.from(this.currentRequests.values()).some((request: Pending) => request.id === id && request.kind !== 'image') || this.receipts.some((receipt: WechatReceipt) => receipt.requestId === id));
   }
-  /** UI 线程附着回执监听；ids 为 null 接收全部，否则只交付指定 owner 的 ID。 */
-  addListener(listener: Listener, ids: Set<string> | null = null): void {
-    const registration: ListenerRegistration = { ids };
+  /** UI 线程附着监听；ids 为 null 接收全部，onSubmitted 交付本地替换取消，不伪造 SDK 回执。 */
+  addListener(listener: Listener, ids: Set<string> | null = null, onSubmitted: ((id: string, status: WechatStatus) => void) | null = null): void {
+    const registration: ListenerRegistration = { ids, onSubmitted };
     this.listeners.set(listener, registration);
     // 逐条移出缓冲，撤销/同函数重注册后不再调用旧 owner，也不丢其余项。
     while (this.listeners.get(listener) === registration) {
@@ -106,8 +107,7 @@ export class WechatClient implements wx.WXApiEventHandler {
         return;
       }
     }
-    const current = this.pending?.transaction === transaction ? this.pending :
-      Array.from(this.acceptedRequests.values()).find((request: Pending) => request.transaction === transaction);
+    const current = Array.from(this.currentRequests.values()).find((request: Pending) => request.transaction === transaction);
     if (!current || current.cancelled || resp.transaction !== current.transaction) { return; }
     let result: WechatReceipt;
     if (current.kind === 'authorization' && resp instanceof wx.SendAuthResp) {
@@ -122,11 +122,12 @@ export class WechatClient implements wx.WXApiEventHandler {
       try { const parsed = JSON.parse(resp.extMsg ?? '{}') as PageResult; if (typeof parsed?.result === 'string') { page = parsed.result; } } catch (_) {}
       result = { requestId: current.id, kind: current.kind, errorCode: resp.errCode, pageResult: page };
     } else { return; }
-    if (this.pending === current) {
-      this.store?.save(null);
-      this.pending = null;
-    } else this.acceptedRequests.delete(current.id);
+    this.clearJournal(current);
+    this.currentRequests.delete(this.lane(current.kind));
     this.removeFile(current.path);
+    this.deliver(result);
+  }
+  private deliver(result: WechatReceipt): void {
     let delivered = false;
     // Map 原地重注册会被 live 遍历再次访问；当前回执只交投递开始时的注册。
     const listeners = new Map(this.listeners);
@@ -143,96 +144,131 @@ export class WechatClient implements wx.WXApiEventHandler {
   }
   /** 开始 OAuth 并持久保存随机 state；成功仅表示 SDK 受理，后端负责换票。 */
   async authorize(id: string): Promise<WechatStatus> {
-    const rejected = this.begin(id, 'authorization'); if (rejected) { return rejected; }
-    const pending = this.pending!;
-    try {
-      pending.state = new util.Base64Helper().encodeToStringSync(cryptoFramework.createRandom().generateRandomSync(32).data);
-      const req = new wx.SendAuthReq(); req.scope = 'snsapi_userinfo'; req.state = pending.state;
-      return await this.send(req, pending);
-    } catch (_) { return this.fail(pending, 'failed'); }
+    const pending = this.begin(id, 'authorization'); if (typeof pending === 'string') { return pending; }
+    return this.wait(pending, async () => {
+      try {
+        const req = new wx.SendAuthReq(); req.scope = 'snsapi_userinfo'; req.state = pending.state;
+        return await this.send(req, pending);
+      } catch (_) { return this.fail(pending, 'failed'); }
+    });
   }
   /** Base64 编码 PNG/JPEG 最大 25 MiB；仅返回 SDK 受理，文件保留到匹配回执后删除。 */
   async shareImage(id: string, base64: string, scene: string, recipientId?: string, _senderOpenId?: string): Promise<WechatStatus> {
-    const rejected = this.begin(id, 'image'); if (rejected) { return rejected; }
-    const pending = this.pending!;
-    if (recipientId !== undefined) { return this.fail(pending, typeof recipientId !== 'string' || !recipientId.trim() || scene !== 'session' ? 'invalid_content' : 'unsupported'); }
-    if (!this.validScene(scene) || typeof base64 !== 'string' || !base64 || base64.length > Math.ceil(25 * 1024 * 1024 / 3) * 4) { return this.fail(pending, 'invalid_content'); }
-    let source: image.ImageSource | null = null;
-    try {
-      const bytes = new util.Base64Helper().decodeSync(base64);
-      if (!bytes.length || bytes.length > 25 * 1024 * 1024) { return this.fail(pending, 'invalid_content'); }
-      source = image.createImageSource(bytes.buffer as ArrayBuffer);
-      const info = await source.getImageInfo();
-      if (info.mimeType !== 'image/png' && info.mimeType !== 'image/jpeg') { return this.fail(pending, 'unsupported'); }
-      const thumb = await this.thumbnail(source);
-      if (!thumb) { return this.fail(pending, 'invalid_content'); }
-      if (pending.cancelled) { return 'cancelled'; }
-      pending.path = `${pending.context.cacheDir}/gyc_wechat_${util.generateRandomUUID()}.${info.mimeType === 'image/png' ? 'png' : 'jpg'}`;
-      const file = await fs.open(pending.path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+    if (recipientId !== undefined) { return typeof recipientId !== 'string' || !recipientId.trim() || scene !== 'session' ? 'invalid_content' : 'unsupported'; }
+    if (!this.validScene(scene) || typeof base64 !== 'string' || !base64 || base64.length > Math.ceil(25 * 1024 * 1024 / 3) * 4) { return 'invalid_content'; }
+    let bytes: Uint8Array;
+    try { bytes = new util.Base64Helper().decodeSync(base64); } catch (_) { return 'invalid_content'; }
+    if (!bytes.length || bytes.length > 25 * 1024 * 1024) { return 'invalid_content'; }
+    const pending = this.begin(id, 'image'); if (typeof pending === 'string') { return pending; }
+    return this.wait(pending, async () => {
+      let source: image.ImageSource | null = null;
       try {
-        let offset = 0;
-        while (offset < bytes.length) {
-          const count = await fs.write(file.fd, (bytes.buffer as ArrayBuffer).slice(offset));
-          if (count <= 0) { throw new Error('Incomplete image'); }
-          offset += count;
-        }
-      } finally { await fs.close(file); }
-      const object = new wx.WXImageObject(); object.uri = fileUri.getUriFromPath(pending.path);
-      const message = new wx.WXMediaMessage(); message.mediaObject = object; message.thumbData = thumb;
-      return await this.sendShare(message, scene, pending);
-    } catch (_) { return this.fail(pending, pending.cancelled ? 'cancelled' : 'invalid_content'); }
-    finally {
-      // 已受理不能因本地资源释放失败变为失败，避免宿主重复发送。
-      if (source) { try { await source.release(); } catch (_) {} }
-    }
+        source = image.createImageSource(bytes.buffer as ArrayBuffer);
+        const info = await source.getImageInfo();
+        if (info.mimeType !== 'image/png' && info.mimeType !== 'image/jpeg') { return this.fail(pending, 'unsupported'); }
+        const thumb = await this.thumbnail(source);
+        if (!thumb) { return this.fail(pending, 'invalid_content'); }
+        if (pending.cancelled) { return 'cancelled'; }
+        pending.path = `${pending.context.cacheDir}/gyc_wechat_${util.generateRandomUUID()}.${info.mimeType === 'image/png' ? 'png' : 'jpg'}`;
+        const file = await fs.open(pending.path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+        try {
+          let offset = 0;
+          while (offset < bytes.length) {
+            const count = await fs.write(file.fd, (bytes.buffer as ArrayBuffer).slice(offset));
+            if (count <= 0) { throw new Error('Incomplete image'); }
+            offset += count;
+          }
+        } finally { await fs.close(file); }
+        const object = new wx.WXImageObject(); object.uri = fileUri.getUriFromPath(pending.path);
+        const message = new wx.WXMediaMessage(); message.mediaObject = object; message.thumbData = thumb;
+        return await this.sendShare(message, scene, pending);
+      } catch (_) { return this.fail(pending, pending.cancelled ? 'cancelled' : 'invalid_content'); }
+      finally {
+        // 已受理不能因本地资源释放失败变为失败，避免宿主重复发送。
+        if (source) { try { await source.release(); } catch (_) {} }
+      }
+    });
   }
   /** 分享无凭据 HTTP(S) 页面；缩略图是 Base64 图片，标题/描述同时受字符与字节限制。 */
   async shareWebPage(id: string, address: string, title: string, description: string, thumbBase64: string, scene: string): Promise<WechatStatus> {
-    const rejected = this.begin(id, 'share'); if (rejected) { return rejected; }
-    const pending = this.pending!;
-    let source: image.ImageSource | null = null;
-    try {
-      if (!this.validScene(scene) || !this.validUrl(address) || typeof title !== 'string' || typeof description !== 'string' || typeof thumbBase64 !== 'string' || !thumbBase64 || thumbBase64.length > Math.ceil(25 * 1024 * 1024 / 3) * 4) { return this.fail(pending, 'invalid_content'); }
-      const bytes = new util.Base64Helper().decodeSync(thumbBase64);
-      if (!bytes.length || bytes.length > 25 * 1024 * 1024) { return this.fail(pending, 'invalid_content'); }
-      source = image.createImageSource(bytes.buffer as ArrayBuffer);
-      const thumb = await this.thumbnail(source);
-      if (!thumb) { return this.fail(pending, 'invalid_content'); }
-      const object = new wx.WXWebpageObject(); object.webpageUrl = address;
-      const message = new wx.WXMediaMessage(); message.mediaObject = object; message.title = this.text(title, 256, 512); message.description = this.text(description, 512, 1024); message.thumbData = thumb;
-      return this.sendShare(message, scene, pending);
-    } catch (_) { return this.fail(pending, 'invalid_content'); }
-    finally { if (source) { try { await source.release(); } catch (_) {} } }
+    if (!this.validScene(scene) || !this.validUrl(address) || typeof title !== 'string' || typeof description !== 'string' || typeof thumbBase64 !== 'string' || !thumbBase64 || thumbBase64.length > Math.ceil(25 * 1024 * 1024 / 3) * 4) { return 'invalid_content'; }
+    let bytes: Uint8Array;
+    try { bytes = new util.Base64Helper().decodeSync(thumbBase64); } catch (_) { return 'invalid_content'; }
+    if (!bytes.length || bytes.length > 25 * 1024 * 1024) { return 'invalid_content'; }
+    const pending = this.begin(id, 'share'); if (typeof pending === 'string') { return pending; }
+    return this.wait(pending, async () => {
+      let source: image.ImageSource | null = null;
+      try {
+        source = image.createImageSource(bytes.buffer as ArrayBuffer);
+        const thumb = await this.thumbnail(source);
+        if (!thumb) { return this.fail(pending, 'invalid_content'); }
+        const object = new wx.WXWebpageObject(); object.webpageUrl = address;
+        const message = new wx.WXMediaMessage(); message.mediaObject = object; message.title = this.text(title, 256, 512); message.description = this.text(description, 512, 1024); message.thumbData = thumb;
+        return this.sendShare(message, scene, pending);
+      } catch (_) { return this.fail(pending, 'invalid_content'); }
+      finally { if (source) { try { await source.release(); } catch (_) {} } }
+    });
   }
   /** 打开商家确认页，packageValue 来自可信后端并原样编码；回执不证明到账。 */
   async openMerchantTransfer(id: string, merchantId: string, appId: string, packageValue: string): Promise<WechatStatus> {
-    const rejected = this.begin(id, 'merchant_transfer'); if (rejected) { return rejected; }
-    const pending = this.pending!;
-    if (typeof merchantId !== 'string' || !merchantId.trim() || typeof appId !== 'string' || !appId.trim() || typeof packageValue !== 'string' || !packageValue.trim()) { return this.fail(pending, 'invalid_content'); }
+    if (typeof merchantId !== 'string' || !merchantId.trim() || typeof appId !== 'string' || !appId.trim() || typeof packageValue !== 'string' || !packageValue.trim()) { return 'invalid_content'; }
     const req = new wx.OpenBusinessViewReq(); req.businessType = 'requestMerchantTransfer';
-    req.query = `mchId=${this.encode(merchantId)}&appId=${this.encode(appId)}&package=${this.encode(packageValue)}`;
-    return this.send(req, pending);
+    try { req.query = `mchId=${this.encode(merchantId)}&appId=${this.encode(appId)}&package=${this.encode(packageValue)}`; }
+    catch (_) { return 'invalid_content'; }
+    const pending = this.begin(id, 'merchant_transfer'); if (typeof pending === 'string') { return pending; }
+    return this.wait(pending, async () => this.send(req, pending));
   }
   /** 清除业务等待；未发送图片可删除，SDK 已持有的 URI 等匹配回执，不能关闭外部微信页面。 */
   cancel(id: string): boolean {
     this.receipts = this.receipts.filter((receipt: WechatReceipt) => receipt.requestId !== id);
-    const pending = this.pending;
-    if (!pending || pending.id !== id) { return this.acceptedRequests.delete(id); }
-    if (pending.kind !== 'image') { this.store?.save(null); }
-    pending.cancelled = true; this.pending = null;
-    if (!this.imageFiles.has(pending.transaction)) { this.removeFile(pending.path); }
+    const pending = Array.from(this.currentRequests.values()).find((request: Pending) => request.id === id);
+    if (!pending) { return false; }
+    this.clearJournal(pending);
+    this.currentRequests.delete(this.lane(pending.kind));
+    this.invalidate(pending);
     return true;
   }
-  private begin(id: string, kind: string): WechatStatus | null {
+  private lane(kind: string): string { return kind === 'image' ? 'share' : kind; }
+  private begin(id: string, kind: string): Pending | WechatStatus {
     if (typeof id !== 'string' || !id.trim() || id.length > 128 || this.usedIds.has(id)) { return 'invalid_content'; }
-    if (this.pending) { return 'busy'; }
     this.usedIds.add(id);
     try { if (!this.api.isWXAppInstalled()) { return 'not_installed'; } } catch (_) { return 'failed'; }
     const transaction = util.generateRandomUUID();
     if (this.usedTransactions.has(transaction)) { return 'failed'; }
     this.usedTransactions.add(transaction);
-    this.pending = { id, transaction, kind, state: '', path: '', cancelled: false, context: this.context };
-    return null;
+    const pending: Pending = { id, transaction, kind, state: '', path: '', cancelled: false, context: this.context, cancelWaiting: null };
+    if (kind === 'authorization') {
+      pending.state = new util.Base64Helper().encodeToStringSync(cryptoFramework.createRandom().generateRandomSync(32).data);
+      // 原子替换 OAuth 日志成功后才作废旧轮；其他类型始终不覆盖授权日志。
+      this.store?.save({ requestId: id, transaction, kind, state: pending.state });
+      this.journal = pending;
+    }
+    const lane = this.lane(kind), previous = this.currentRequests.get(lane);
+    if (previous && this.journal === previous) { this.clearJournal(previous); }
+    this.currentRequests.set(lane, pending);
+    if (previous) {
+      this.invalidate(previous);
+      const listeners = new Map(this.listeners);
+      listeners.forEach((registration: ListenerRegistration, listener: Listener) => {
+        if (this.listeners.get(listener) === registration && (!registration.ids || registration.ids.has(previous.id))) { registration.onSubmitted?.(previous.id, 'cancelled'); }
+      });
+    }
+    return pending;
+  }
+  private invalidate(pending: Pending): void {
+    pending.cancelled = true; pending.cancelWaiting?.(); pending.cancelWaiting = null;
+    if (!this.imageFiles.has(pending.transaction)) { this.removeFile(pending.path); }
+  }
+  private clearJournal(pending: Pending): void {
+    if (this.journal !== pending) { return; }
+    this.store?.save(null); this.journal = null;
+  }
+  private wait(pending: Pending, action: () => Promise<WechatStatus>): Promise<WechatStatus> {
+    if (pending.cancelled) { return Promise.resolve('cancelled'); }
+    return new Promise<WechatStatus>((resolve, reject) => {
+      pending.cancelWaiting = () => resolve('cancelled');
+      action().then((status: WechatStatus) => { pending.cancelWaiting = null; resolve(status); }, reject);
+    });
   }
   private sendShare(message: wx.WXMediaMessage, scene: string, pending: Pending): Promise<WechatStatus> {
     const req = new wx.SendMessageToWXReq(); req.message = message; req.scene = scene === 'timeline' ? wx.SendMessageToWXReq.WXSceneTimeline : wx.SendMessageToWXReq.WXSceneSession;
@@ -243,35 +279,24 @@ export class WechatClient implements wx.WXApiEventHandler {
     req.transaction = pending.transaction;
     try {
       if (!req.checkArgs()) { return this.fail(pending, 'invalid_content'); }
-      // 图片仅跟踪文件；其余请求在发送前保存，回执可能早于 send Promise 完成。
+      // 图片 URI 生命周期独立于业务当前轮；OAuth 已在安装新轮前原子保存。
       if (pending.kind === 'image') { this.imageFiles.set(pending.transaction, pending.path); }
-      else { this.store?.save({ requestId: pending.id, transaction: pending.transaction, kind: pending.kind, state: pending.state }); }
       const accepted = await this.api.sendReq(pending.context, req);
       if (accepted) {
-        // shortcut: SDK 1.0.23 仅授予 Want URI 读取权，缺回执时由系统回收 cache，确认消费合同后再缩短保留期。
-        if (pending.kind === 'image' && this.pending === pending) { this.pending = null; }
-        if ((pending.kind === 'share' || pending.kind === 'merchant_transfer') && this.pending === pending) {
-          try {
-            this.store?.save(null);
-            if (this.acceptedRequests.size === 64) this.acceptedRequests.delete(Array.from(this.acceptedRequests.keys())[0]);
-            this.acceptedRequests.set(pending.id, pending);
-            this.pending = null;
-          } catch (_) {
-            // 已受理不能报失败诱发重试；可信清理失败时保留等待，允许显式取消。
-          }
-        }
+        // shortcut: SDK 1.0.23 仅授予 Want URI 读取权，缺回执时由系统回收 cache。
+        if (pending.kind === 'image' && this.currentRequests.get('share') === pending) { this.currentRequests.delete('share'); }
         return pending.cancelled ? 'cancelled' : 'requested';
       }
     } catch (_) {}
     return this.fail(pending, pending.cancelled ? 'cancelled' : 'failed');
   }
   private fail(pending: Pending, status: WechatStatus): WechatStatus {
-    if (this.pending === pending) {
-      if (pending.kind !== 'image') { this.store?.save(null); }
-      this.pending = null;
+    if (this.currentRequests.get(this.lane(pending.kind)) === pending) {
+      this.clearJournal(pending);
+      this.currentRequests.delete(this.lane(pending.kind));
     }
     this.imageFiles.delete(pending.transaction);
-    this.removeFile(pending.path); return status;
+    this.removeFile(pending.path); return pending.cancelled ? 'cancelled' : status;
   }
   private async thumbnail(source: image.ImageSource): Promise<Uint8Array | null> {
     const info = await source.getImageInfo();

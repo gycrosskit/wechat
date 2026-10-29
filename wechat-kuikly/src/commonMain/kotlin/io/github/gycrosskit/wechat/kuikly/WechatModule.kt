@@ -15,6 +15,8 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 @OptIn(ExperimentalEncodingApi::class)
 /** 页面线程使用；attach 后提交请求，dispose 撤销所有回调并通知原生取消本页等待。 */
 class WechatModule : Module(), WechatClient {
+    /** 暴露真实平台归属能力，宿主无需再次判断 Android/iOS/OHOS。 */
+    val supportsTransferReceiptOwnership: Boolean get() = supportsMerchantTransferReceiptOwnership
     private var listener: WechatListener? = null
     private var listening: CallbackRef? = null
     private val callbacks = mutableMapOf<String, CallbackRef>()
@@ -30,6 +32,13 @@ class WechatModule : Module(), WechatClient {
         if (listening != null) return
         listening = toNative(true, "listen", JSONObject().apply { restoredRequestId?.let { put("restoredRequestId", it) } }.toString(), { payload ->
             if (disposed || payload == null) return@toNative
+            // 替换已受理旧轮是本地控制事件，不伪造微信 SDK 最终回执。
+            if (payload.optString("status") == "cancelled") {
+                val id = payload.optString("requestId").takeIf(String::isNotBlank) ?: return@toNative
+                callbacks.remove(id)?.let(::removeCallback)
+                submitted(id, WechatStatus.CANCELLED)
+                return@toNative
+            }
             val kind = when (payload.optString("kind")) {
                 "authorization" -> WechatKind.AUTHORIZATION
                 "share" -> WechatKind.SHARE
@@ -47,11 +56,7 @@ class WechatModule : Module(), WechatClient {
             val receipt = WechatReceipt(requestId, kind, payload.optInt("errorCode"),
                 payload.optString("authorizationCode").takeIf(String::isNotBlank), payload.optString("pageResult").takeIf(String::isNotBlank),
                 payload.optString("candidateRequestId").takeIf(String::isNotBlank), attribution)
-            val id = when (receipt.attribution) {
-                WechatAttribution.VERIFIED -> receipt.requestId
-                WechatAttribution.SINGLE_PENDING -> receipt.candidateRequestId.takeIf { receipt.kind == WechatKind.SHARE }
-                WechatAttribution.UNATTRIBUTED -> null
-            }
+            val id = receipt.routingRequestId
             // 部分 HAR 的早到回执会消费原生等待，不再发送 submitted；只完成匹配类型的本次提交。
             val waiting = submissions[id]
             if (waiting != null && waiting.kind != receipt.kind) return@toNative
@@ -100,6 +105,19 @@ class WechatModule : Module(), WechatClient {
     }
 
     override fun authorize(requestId: String) = call(requestId, "authorize", JSONObject())
+    /**
+     * Base64/Data URL 直接跨桥；只规范编码和检查长度，不创建图片 ByteArray 再编码。
+     * maximumBytes 允许宿主采用更小的内容上限，不能突破微信 25 MiB 限制。
+     */
+    fun shareImageBase64(requestId: String, data: String, scene: WechatScene, recipientId: String? = null,
+        senderOpenId: String? = null, maximumBytes: Int = MAX_IMAGE) {
+        val encoded = normalizeImageBase64(data, maximumBytes)
+        if (encoded == null) { submitted(requestId, WechatStatus.INVALID_CONTENT); return }
+        call(requestId, "image", JSONObject().apply {
+            put("data", encoded); put("scene", sceneValue(scene))
+            recipientId?.let { put("recipientId", it) }; senderOpenId?.let { put("senderOpenId", it) }
+        })
+    }
     override fun shareImage(requestId: String, data: ByteArray, scene: WechatScene, recipientId: String?, senderOpenId: String?) {
         if (data.isEmpty() || data.size > MAX_IMAGE) { submitted(requestId, WechatStatus.INVALID_CONTENT); return }
         call(requestId, "image", JSONObject().apply { put("data", Base64.encode(data)); put("scene", sceneValue(scene)); recipientId?.let { put("recipientId", it) }; senderOpenId?.let { put("senderOpenId", it) } })
@@ -162,4 +180,28 @@ class WechatModule : Module(), WechatClient {
         const val NAME = "GycWechat"
         private const val MAX_IMAGE = 25 * 1024 * 1024
     }
+}
+
+/** 规范 Base64 语法与补位；实际解码仅在原生边界执行，各端接收相同编码。 */
+private fun normalizeImageBase64(value: String, maximumBytes: Int): String? {
+    if (maximumBytes !in 1..25 * 1024 * 1024 || value.length > 4 * ((maximumBytes + 2) / 3) + 256) return null
+    val content = if (value.startsWith("data:")) {
+        val comma = value.indexOf(',')
+        if (comma !in 1..256 || !value.substring(0, comma).endsWith(";base64")) return null
+        value.substring(comma + 1)
+    } else value
+    val encoded = if (content.any(Char::isWhitespace)) content.filterNot(Char::isWhitespace) else content
+    val count = encoded.indexOf('=').let { if (it < 0) encoded.length else it }
+    if (count == 0 || count % 4 == 1) return null
+    val padding = (4 - count % 4) % 4
+    if (encoded.length != count && encoded.length != count + padding) return null
+    for (index in encoded.indices) {
+        val character = encoded[index]
+        if (index >= count) {
+            if (character != '=') return null
+        } else if (character !in 'A'..'Z' && character !in 'a'..'z' && character !in '0'..'9' && character != '+' && character != '/') return null
+    }
+    val bytes = count / 4 * 3 + count % 4 * 6 / 8
+    if (bytes > maximumBytes) return null
+    return if (encoded.length == count && padding != 0) encoded + "=".repeat(padding) else encoded
 }

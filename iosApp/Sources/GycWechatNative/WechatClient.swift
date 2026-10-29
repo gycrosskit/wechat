@@ -173,12 +173,13 @@ public final class WechatClient: NSObject, WXApiDelegate {
     /// Main 分享编码图片，最大 25 MiB；仅等待 SDK 受理，指定联系人使用同 App 的可信双方 openId。
     public func shareImage(requestID: String, data: Data, scene: WechatScene, recipientID: String? = nil, senderOpenID: String? = nil) {
         precondition(Thread.isMainThread)
-        guard begin(requestID, sharing: .submissionOnly) else { return }
         if let recipientID {
-            guard !recipientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, scene == .session else { reject(requestID, "invalid_content"); return }
-            guard senderOpenID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { reject(requestID, "unsupported"); return }
+            guard !recipientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, scene == .session else { notifySubmitted(requestID, "invalid_content"); return }
+            guard senderOpenID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { notifySubmitted(requestID, "unsupported"); return }
         }
-        guard !data.isEmpty, data.count <= 25 * 1024 * 1024, let thumb = Self.thumbnail(data) else { reject(requestID, "invalid_content"); return }
+        guard !data.isEmpty, data.count <= 25 * 1024 * 1024 else { notifySubmitted(requestID, "invalid_content"); return }
+        guard begin(requestID, sharing: .submissionOnly) else { return }
+        guard let thumb = Self.thumbnail(data) else { reject(requestID, "invalid_content"); return }
         let image = WXImageObject()
         image.imageData = data
         let message = WXMediaMessage()
@@ -189,10 +190,11 @@ public final class WechatClient: NSObject, WXApiDelegate {
     /// Main 分享无凭据 HTTP(S) 页面；标题/描述限制同时按字符和 UTF-8 字节截断。
     public func shareWebPage(requestID: String, url: String, title: String, description: String, thumbnail: Data, scene: WechatScene) {
         precondition(Thread.isMainThread)
-        guard begin(requestID, sharing: .tracked) else { return }
         let address = URLComponents(string: url)
         guard ["http", "https"].contains(address?.scheme?.lowercased() ?? ""), address?.host?.isEmpty == false, address?.user == nil, address?.password == nil,
-              url.utf8.count <= 10 * 1024, !thumbnail.isEmpty, thumbnail.count <= 25 * 1024 * 1024, let thumb = Self.thumbnail(thumbnail) else { reject(requestID, "invalid_content"); return }
+              url.utf8.count <= 10 * 1024, !thumbnail.isEmpty, thumbnail.count <= 25 * 1024 * 1024 else { notifySubmitted(requestID, "invalid_content"); return }
+        guard begin(requestID, sharing: .tracked) else { return }
+        guard let thumb = Self.thumbnail(thumbnail) else { reject(requestID, "invalid_content"); return }
         let webpage = WXWebpageObject()
         webpage.webpageUrl = url
         let message = WXMediaMessage()
@@ -205,9 +207,9 @@ public final class WechatClient: NSObject, WXApiDelegate {
     /// Main 打开商家转账确认页，参数原样 URL 编码；确认回执不表示到账。
     public func openMerchantTransfer(requestID: String, merchantID: String, appID: String, packageValue: String) {
         precondition(Thread.isMainThread)
-        guard begin(requestID) else { return }
         guard [merchantID, appID, packageValue].allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
-              let merchant = Self.encode(merchantID), let app = Self.encode(appID), let package = Self.encode(packageValue) else { reject(requestID, "invalid_content"); return }
+              let merchant = Self.encode(merchantID), let app = Self.encode(appID), let package = Self.encode(packageValue) else { notifySubmitted(requestID, "invalid_content"); return }
+        guard begin(requestID) else { return }
         let request = WXOpenBusinessViewReq()
         request.businessType = "requestMerchantTransfer"
         request.query = "mchId=\(merchant)&appId=\(app)&package=\(package)"
@@ -228,14 +230,18 @@ public final class WechatClient: NSObject, WXApiDelegate {
     private func onResp(_ resp: BaseResp, callbackDigest: String?) {
         precondition(Thread.isMainThread)
         if let auth = resp as? SendAuthResp {
+            let submitting = session.submittingAuthorization(auth.state)
             guard let id = session.consumeAuthorization(auth.state) else { finishCallback(callbackDigest, handled: false); return }
             finishCallback(callbackDigest, handled: true)
             let code = auth.errCode == 0 ? auth.code.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } : nil
             deliver(WechatReceipt(requestID: id, kind: .authorization, errorCode: auth.errCode == 0 && code == nil ? -1 : auth.errCode, authorizationCode: code, pageResult: nil, attribution: .verified))
+            if submitting { notifySubmitted(id, "requested") }
         } else if resp is SendMessageToWXResp {
             finishCallback(callbackDigest, handled: true)
+            let submitting = session.submittingShare
             let candidate = session.consumeShare()
             deliver(WechatReceipt(requestID: nil, kind: .share, errorCode: resp.errCode, authorizationCode: nil, pageResult: nil, candidateRequestID: candidate, attribution: candidate == nil ? .unattributed : .singlePending))
+            if let candidate, submitting { notifySubmitted(candidate, "requested") }
         } else if let transfer = resp as? WXOpenBusinessViewResp, transfer.businessType == "requestMerchantTransfer" {
             finishCallback(callbackDigest, handled: true)
             let data = transfer.extMsg?.data(using: .utf8)
@@ -249,11 +255,11 @@ public final class WechatClient: NSObject, WXApiDelegate {
         if handled { callbackDigests.insert(digest) }
     }
     private func begin(_ id: String, state: String? = nil, sharing: WechatSession.ShareMode? = nil) -> Bool {
-        if let status = session.begin(id, state: state, sharing: sharing) { notifySubmitted(id, status); return false }
-        guard registered else { reject(id, "failed"); return false }
-        guard WXApi.isWXAppInstalled() else { reject(id, "not_installed"); return false }
-        guard WXApi.isWXAppSupport() else { reject(id, "unsupported"); return false }
-        return true
+        guard registered else { notifySubmitted(id, "failed"); return false }
+        guard WXApi.isWXAppInstalled() else { notifySubmitted(id, "not_installed"); return false }
+        guard WXApi.isWXAppSupport() else { notifySubmitted(id, "unsupported"); return false }
+        if let status = session.begin(id, state: state, sharing: sharing, onReplaced: { self.notifySubmitted($0, "cancelled") }) { notifySubmitted(id, status); return false }
+        return session.isSubmitting(id)
     }
     private func reject(_ id: String, _ status: String) { _ = session.cancel(id); notifySubmitted(id, status) }
     private func share(_ message: WXMediaMessage, id: String, scene: WechatScene, recipientID: String? = nil, senderOpenID: String? = nil) {
@@ -269,6 +275,7 @@ public final class WechatClient: NSObject, WXApiDelegate {
         send(request, id: id)
     }
     private func send(_ request: BaseReq, id: String) {
+        guard session.isSubmitting(id) else { return }
         if request is SendMessageToWXReq, !session.dispatchedShare(id) { return }
         WXApi.send(request) { [weak self] accepted in
             DispatchQueue.main.async {

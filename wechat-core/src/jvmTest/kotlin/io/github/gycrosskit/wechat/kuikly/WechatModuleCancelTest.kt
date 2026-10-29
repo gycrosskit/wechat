@@ -3,6 +3,10 @@ package io.github.gycrosskit.wechat.kuikly
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import io.github.gycrosskit.wechat.*
 import kotlin.test.*
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 
 class WechatModuleCancelTest {
     private class Listener : WechatListener {
@@ -14,6 +18,59 @@ class WechatModuleCancelTest {
     private fun status(value: String) = JSONObject().apply { put("status", value) }
     private fun receipt(id: String) = JSONObject().apply {
         put("requestId", id); put("kind", "authorization"); put("errorCode", 0); put("authorizationCode", "code")
+    }
+
+    @Test fun base64ImagesCrossBridgeWithoutDecodingOrReencodingAndRespectCallerLimit() {
+        val module = WechatModule(); val listener = Listener(); module.attach(listener)
+        val valid = listOf("AQ==", "AQ", " A Q = = ", "data:image/png;base64,AQ==")
+        for ((index, data) in valid.withIndex()) {
+            module.shareImageBase64("valid-$index", data, WechatScene.SESSION, "recipient", "sender", maximumBytes = 1)
+            val call = module.calls.last()
+            assertEquals("image", call.method)
+            assertTrue(call.params.toString().contains("data=AQ=="))
+            assertTrue(call.params.toString().contains("recipientId=recipient"))
+            call.deliver(status("requested"))
+        }
+        val calls = module.calls.size
+        for (data in listOf("", "!", "A", "A=Q=", "AQ=", "AQ===", "data:image/png,AQ==", "data:" + "x".repeat(257) + ";base64,AQ==", "AQID")) {
+            module.shareImageBase64("invalid-${listener.submitted.size}", data, WechatScene.SESSION, maximumBytes = 1)
+            assertEquals(WechatStatus.INVALID_CONTENT, listener.submitted.last().second)
+            assertEquals(calls, module.calls.size)
+        }
+        for (limit in listOf(0, 25 * 1024 * 1024 + 1)) {
+            module.shareImageBase64("limit-$limit", "AQ==", WechatScene.SESSION, maximumBytes = limit)
+            assertEquals(WechatStatus.INVALID_CONTENT, listener.submitted.last().second)
+        }
+        module.dispose()
+    }
+
+    @Test fun replacementControlResumesOldWaitWithoutEndingAnotherType() = runBlocking {
+        val module = WechatModule(); val listener = Listener(); module.attach(listener)
+        val old = async(start = CoroutineStart.UNDISPATCHED) {
+            module.awaitSubmission("old", WechatKind.AUTHORIZATION) { authorize("old") }
+        }
+        val other = async(start = CoroutineStart.UNDISPATCHED) {
+            module.awaitSubmission("other", WechatKind.MERCHANT_TRANSFER) { openMerchantTransfer("other", "m", "app", "package") }
+        }
+        val otherCall = module.calls.last()
+        module.calls.first().deliver(status("cancelled").apply { put("requestId", "old") })
+        assertEquals(WechatStatus.CANCELLED, withTimeout(1_000) { old.await() })
+        assertFalse(other.isCompleted)
+        otherCall.deliver(status("requested"))
+        assertEquals(WechatStatus.REQUESTED, withTimeout(1_000) { other.await() })
+        assertTrue(listener.receipts.isEmpty())
+        module.dispose()
+    }
+
+    @Test fun replacementControlEndsOnlyOldSubmissionWithoutFakingReceipt() {
+        val module = WechatModule(); val listener = Listener(); module.attach(listener)
+        module.authorize("old"); module.authorize("new")
+        val currentCallback = module.calls.last().callbackRef
+        module.calls.first().deliver(status("cancelled").apply { put("requestId", "old") })
+        assertEquals(listOf("old" to WechatStatus.CANCELLED), listener.submitted)
+        assertTrue(listener.receipts.isEmpty())
+        assertTrue(currentCallback in module.liveCallbacks)
+        module.dispose()
     }
 
     @Test fun iosCandidateDoesNotBecomeVerifiedRequestId() {
