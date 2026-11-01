@@ -205,3 +205,119 @@ do {
     module.invalidate()
 }
 print("Production Swift receiver: replacement cancellation finishes pending submission or reaches listen as one control event")
+
+// Native consumption is not Renderer delivery: only this request's queued receipt is revocable.
+for inactive in [false, true] {
+    for earlyReceipt in [false, true] {
+        let client = WechatClient()
+        WechatModule.clientProvider = { client }
+        let module = WechatModule()
+        var receipts = [[String: Any]](), acknowledgements = [String]()
+        _ = module.hrv_call(withMethod: "listen", params: "{}") { receipts.append($0 as! [String: Any]) }
+        _ = module.hrv_call(withMethod: "authorize", params: "{\"requestId\":\"queued-auth\"}") { _ in }
+        if !earlyReceipt { client.emitSubmitted("queued-auth", "requested") }
+        KuiklyRenderThreadManager.paused = true
+        UIApplication.shared.applicationState = inactive ? .inactive : .active
+        client.pending.remove("queued-auth")
+        client.emit(WechatReceipt(requestID: "queued-auth", candidateRequestID: nil, kind: .authorization,
+            errorCode: 0, attribution: .verified, authorizationCode: "revoked-code"))
+        if earlyReceipt { client.emitSubmitted("queued-auth", "requested") }
+        if inactive {
+            UIApplication.shared.applicationState = .active
+            NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        }
+        // Other kinds may be pending or already queued on this same Renderer.
+        _ = module.hrv_call(withMethod: "webpage", params: shareArguments("parallel-share"), callback: nil)
+        client.emitSubmitted("parallel-share", "requested")
+        client.pending.remove("parallel-share")
+        client.emit(WechatReceipt(requestID: nil, candidateRequestID: "parallel-share", kind: .share,
+            errorCode: 0, attribution: .singlePending))
+        _ = module.hrv_call(withMethod: "transfer", params: "{\"requestId\":\"parallel-transfer\",\"merchantId\":\"merchant\",\"appId\":\"app\",\"packageValue\":\"package\"}", callback: nil)
+        client.emitSubmitted("parallel-transfer", "requested")
+        client.cancellationHasPending = false
+        client.duringCancellation = { KuiklyRenderThreadManager.drain() }
+        _ = module.hrv_call(withMethod: "cancel", params: "{\"requestId\":\"queued-auth\"}") {
+            acknowledgements.append(($0 as! [String: Any])["status"] as! String)
+        }
+        KuiklyRenderThreadManager.paused = false
+        KuiklyRenderThreadManager.drain()
+        precondition(acknowledgements == ["cancelled"], "尚未交付的 OAuth 回执必须仍能按 ID 取消")
+        precondition(receipts.count == 1 && receipts[0]["candidateRequestId"] as? String == "parallel-share",
+            "已取消 OAuth 不得交付凭据，也不能撤销其他请求的排队回执")
+        precondition(!client.hasModuleOwner(requestID: "queued-auth") && client.hasModuleOwner(requestID: "parallel-transfer"))
+        precondition(NotificationCenter.default.observerCount == 0)
+        _ = module.hrv_call(withMethod: "cancel", params: "{\"requestId\":\"parallel-share\"}") {
+            acknowledgements.append(($0 as! [String: Any])["status"] as! String)
+        }
+        precondition(acknowledgements.last == "no_pending", "已经交付的回执不能再伪造取消成功")
+        client.duringCancellation = nil
+        _ = module.hrv_call(withMethod: "authorize", params: "{\"requestId\":\"delivered-auth\"}", callback: nil)
+        client.emitSubmitted("delivered-auth", "requested")
+        client.pending.remove("delivered-auth")
+        client.emit(WechatReceipt(requestID: "delivered-auth", candidateRequestID: nil, kind: .authorization,
+            errorCode: 0, attribution: .verified, authorizationCode: "delivered-code"))
+        precondition(receipts.count == 2 && receipts[1]["authorizationCode"] as? String == "delivered-code")
+        _ = module.hrv_call(withMethod: "cancel", params: "{\"requestId\":\"delivered-auth\"}") {
+            acknowledgements.append(($0 as! [String: Any])["status"] as! String)
+        }
+        precondition(acknowledgements.last == "no_pending")
+        module.invalidate()
+        precondition(client.observers.isEmpty)
+    }
+}
+print("Production Swift receiver: active/activation-flushed OAuth queue cancellation, early receipt, parallel share/transfer isolation and delivered no_pending passed")
+
+// A cancelled queue entry cannot consume a later delivery even if a caller reuses its ID.
+do {
+    let client = WechatClient()
+    WechatModule.clientProvider = { client }
+    let module = WechatModule()
+    var codes = [String](), acknowledgements = [String]()
+    _ = module.hrv_call(withMethod: "listen", params: "{}") {
+        if let code = ($0 as? [String: Any])?["authorizationCode"] as? String { codes.append(code) }
+    }
+    _ = module.hrv_call(withMethod: "authorize", params: "{\"requestId\":\"reused-queued-id\"}", callback: nil)
+    client.emitSubmitted("reused-queued-id", "requested")
+    KuiklyRenderThreadManager.paused = true
+    client.pending.remove("reused-queued-id")
+    client.emit(WechatReceipt(requestID: "reused-queued-id", candidateRequestID: nil, kind: .authorization,
+        errorCode: 0, attribution: .verified, authorizationCode: "old-code"))
+    client.cancellationHasPending = false
+    _ = module.hrv_call(withMethod: "cancel", params: "{\"requestId\":\"reused-queued-id\"}") {
+        acknowledgements.append(($0 as! [String: Any])["status"] as! String)
+    }
+    _ = module.hrv_call(withMethod: "authorize", params: "{\"requestId\":\"reused-queued-id\"}", callback: nil)
+    client.emitSubmitted("reused-queued-id", "requested")
+    client.pending.remove("reused-queued-id")
+    client.emit(WechatReceipt(requestID: "reused-queued-id", candidateRequestID: nil, kind: .authorization,
+        errorCode: 0, attribution: .verified, authorizationCode: "new-code"))
+    KuiklyRenderThreadManager.paused = false
+    KuiklyRenderThreadManager.drain()
+    precondition(acknowledgements == ["cancelled"] && codes == ["new-code"],
+        "旧排队回执不得借复用 ID 消耗新请求资格或交付旧凭据")
+    module.invalidate()
+}
+do {
+    let client = WechatClient()
+    WechatModule.clientProvider = { client }
+    let module = WechatModule()
+    var codes = [String](), acknowledgements = [String]()
+    _ = module.hrv_call(withMethod: "listen", params: "{}") {
+        if let code = ($0 as? [String: Any])?["authorizationCode"] as? String { codes.append(code) }
+    }
+    _ = module.hrv_call(withMethod: "authorize", params: "{\"requestId\":\"still-queued-id\"}", callback: nil)
+    client.emitSubmitted("still-queued-id", "requested")
+    KuiklyRenderThreadManager.paused = true
+    client.pending.remove("still-queued-id")
+    client.emit(WechatReceipt(requestID: "still-queued-id", candidateRequestID: nil, kind: .authorization,
+        errorCode: 0, attribution: .verified, authorizationCode: "original-code"))
+    _ = module.hrv_call(withMethod: "authorize", params: "{\"requestId\":\"still-queued-id\"}") {
+        acknowledgements.append(($0 as! [String: Any])["status"] as! String)
+    }
+    KuiklyRenderThreadManager.paused = false
+    KuiklyRenderThreadManager.drain()
+    precondition(client.starts == ["still-queued-id"] && acknowledgements == ["busy"] && codes == ["original-code"],
+        "同 ID 的回执仍排队时必须返回 busy，不能覆盖原交付资格")
+    module.invalidate()
+}
+print("Production Swift receiver: queued receipt tokens isolate cancelled/reused IDs; duplicate queued ID returns busy")

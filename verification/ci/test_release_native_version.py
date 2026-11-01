@@ -49,11 +49,17 @@ exit 75
                         if label == 'local': self.assertEqual(options, {'path': str(ROOT)})
                         else: self.assertEqual(options, {'git': 'https://github.com/gycrosskit/wechat.git', 'tag': 'native-1.0.0'})
 
-    def test_current_module_pins_the_same_renderer_as_kotlin(self):
+    def test_current_module_accepts_host_renderer_versions(self):
         result = subprocess.run(['pod', 'ipc', 'spec', 'GycWechatNative.podspec'], cwd=ROOT,
             text=True, capture_output=True, check=True)
         kuikly = next(x for x in json.loads(result.stdout)['subspecs'] if x['name'] == 'Kuikly')
-        self.assertEqual(kuikly['dependencies']['OpenKuiklyIOSRender'], ['2.29.1'])
+        constraints = kuikly['dependencies']['OpenKuiklyIOSRender']
+        result = subprocess.run(['ruby', '-rrubygems', '-rjson', '-e',
+            'r = Gem::Requirement.new(*JSON.parse(ARGV[0])); '
+            'puts JSON.generate(ARGV.drop(1).map { |v| r.satisfied_by?(Gem::Version.new(v)) })',
+            json.dumps(constraints), '2.28.0', '2.29.1', '2.30.0', '3.0.0'],
+            text=True, capture_output=True, check=True)
+        self.assertEqual(json.loads(result.stdout), [False, True, True, False])
         kotlin = (ROOT / 'gradle/libs.versions.toml').read_text()
         self.assertIn('kuikly = "2.29.1-2.0.21-ohos"', kotlin)
 
