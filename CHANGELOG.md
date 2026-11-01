@@ -1,5 +1,11 @@
 # 更新记录
 
+## Native 1.1.1 / HAR 1.1.1
+
+- iOS 以请求 UUID 保护已排队回执的交付资格，取消、失效与相同请求 ID 复用不交付旧回执；未撤销的同 ID 请求仍返回 busy。
+- Renderer Pod/HAR 范围由宿主选择；Maven 复用 `1.1.0`，不陪发。
+- Native/HAR 状态以精确 Release/Registry 及消费收据为准；iOS 分享缺 SDK transaction 的边界保持，设备微信行为另行验收。
+
 ## 1.1.0（发布候选）
 
 - 登录、分享与转账按类型各保留当前轮，修正同类替换、旧取消和迟到回调隔离。
