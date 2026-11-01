@@ -22,13 +22,19 @@ public enum WechatKind { case authorization, share, merchantTransfer }
 public enum WechatAttribution { case verified, singlePending, unattributed }
 public struct WechatReceipt {
     public let requestID: String?; public let candidateRequestID: String?; public let kind: WechatKind; public let errorCode: Int32
-    public let authorizationCode: String? = nil; public let pageResult: String? = nil; public let attribution: WechatAttribution
+    public let authorizationCode: String?; public let pageResult: String? = nil; public let attribution: WechatAttribution
+    public init(requestID: String?, candidateRequestID: String?, kind: WechatKind, errorCode: Int32,
+                attribution: WechatAttribution, authorizationCode: String? = nil) {
+        self.requestID = requestID; self.candidateRequestID = candidateRequestID; self.kind = kind
+        self.errorCode = errorCode; self.attribution = attribution; self.authorizationCode = authorizationCode
+    }
 }
 public final class WechatClient {
     struct Observer { let owns: (String) -> Bool; let submitted: (String, String) -> Void; let receipt: (WechatReceipt) -> Void }
     var observers = [UUID: Observer](); var starts = [String](); var cancelled = [String](); var cancellationSucceeds = true; var cancellationHasPending = true
     var pending = Set<String>()
     var trusted = Set<String>(); var duringRegistration: (() -> Void)?
+    var duringCancellation: (() -> Void)?
     public private(set) var canCorrelateShareReceipt = true
     public func addModuleListener(owns: @escaping (String) -> Bool, onSubmitted: @escaping (String, String) -> Void, onReceipt: @escaping (WechatReceipt) -> Void) -> UUID { let id = UUID(); observers[id] = Observer(owns: owns, submitted: onSubmitted, receipt: onReceipt); duringRegistration?(); return id }
     public func removeModuleListener(_ id: UUID) { observers.removeValue(forKey: id) }
@@ -40,7 +46,7 @@ public final class WechatClient {
     public func shareWebPage(requestID: String, url: String, title: String, description: String, thumbnail: Data, scene: WechatScene) { starts.append(requestID); pending.insert(requestID) }
     public func openMerchantTransfer(requestID: String, merchantID: String, appID: String, packageValue: String) { starts.append(requestID); pending.insert(requestID) }
     public func cancel(requestID: String) { _ = cancelWithResult(requestID: requestID) }
-    public func cancelWithResult(requestID: String) -> Bool { precondition(Thread.isMainThread); if cancellationSucceeds && cancellationHasPending { pending.remove(requestID); cancelled.append(requestID); emitSubmitted(requestID, "cancelled") }; return cancellationSucceeds && cancellationHasPending }
+    public func cancelWithResult(requestID: String) -> Bool { precondition(Thread.isMainThread); duringCancellation?(); if cancellationSucceeds && cancellationHasPending { pending.remove(requestID); cancelled.append(requestID); emitSubmitted(requestID, "cancelled") }; return cancellationSucceeds && cancellationHasPending }
     func emitSubmitted(_ id: String, _ status: String) { for value in observers.values where value.owns(id) { value.submitted(id, status) } }
     func emit(_ receipt: WechatReceipt) { if let id = receipt.requestID ?? receipt.candidateRequestID { for value in observers.values where value.owns(id) { value.receipt(receipt) } } }
 }

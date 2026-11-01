@@ -1,8 +1,12 @@
 # GY CrossKit Wechat
 
-> 当前源码准备 Maven（core/Kuikly）`1.1.0`、iOS Git Pod/SPM `native-1.1.0` 与 HAR `har-1.1.0`。发布与精确公开消费尚待完成；下方历史安装示例及验收保留原标签范围，不代表新候选已可消费。Kuikly 基线保持 2.29.1。
+Kuikly 由宿主统一选择版本；组件构建基线、允许范围及消费验证边界见[功能与平台差异](docs/功能与平台差异.md#kuikly-版本与宿主选择)。
+
+> 当前渠道版本：iOS Git Pod/SPM `native-1.1.1`、HAR `har-1.1.1`，Maven（core/Kuikly）保持 `1.1.0`。iOS 排队回执的取消/同 ID 复用隔离及 Renderer 范围声明见下文；Kuikly 构建基线保持 2.29.1。实际发布和消费状态以精确 Release/Registry 收据为准，历史标签及验收范围不变。
 
 当前分支包含未发布的按类型当前轮及通用接线下沉修复：登录、分享、转账互不等待；同类型新请求替换旧轮，并通知本地取消，不伪造 SDK 回执。图片与网页共用分享轮次；通用回执投影、平台归属能力、Base64 直通和 OHOS 监听恢复由组件统一提供。iOS 无 transaction 的候选限制保留。安装示例、已发布版本与历史验收不包含本任务改动，宿主远程版本和正式提审依赖未升级。合同见[按类型当前轮](docs/功能与平台差异.md#按类型当前轮合同未发布)。
+
+iOS receiver 按请求撤销已排入 Renderer、尚未交付的回执，避免取消后仍交付 OAuth 凭据；其他请求独立，已交付回执仍返回 `no_pending`。此修复尚未发布，验证边界见[功能与平台差异](docs/功能与平台差异.md#验证范围)。
 
 历史修复组合：Maven `0.1.10-rc.1`、HAR `0.1.9-rc.1`，Git Pod / SPM 保留 `native-0.1.9`（Pod `0.1.9`）。Android/OHOS 转账受理后不再等待最终回执才能重试，OHOS 使用实际调用方 Ability context。发布与远程消费状态分别见 [Maven Release](https://github.com/gycrosskit/wechat/releases/tag/0.1.10-rc.1) 和 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-0.1.9-rc.1)；发布候选声明不能替代渠道可消费及设备验收。
 
