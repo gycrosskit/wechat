@@ -1,6 +1,6 @@
 # GY CrossKit Wechat Native
 
-本包版本为 **1.1.1**，Maven（core/Kuikly）复用 `1.1.0`，iOS Git Pod/SPM 为 `native-1.1.1`。HAR Release、OHPM 提交审核、Registry 安装和设备业务分别验收；源码版本声明不代表公开渠道已可用。
+本包版本为 **1.1.2**，Maven（core/Kuikly）复用 `1.1.0`，iOS Git Pod/SPM 为 `native-1.1.1`。HAR Release、OHPM 提交审核、Registry 安装和设备业务分别验收；源码版本声明不代表公开渠道已可用。
 
 HarmonyOS 微信授权、图片/网页分享与商家转账确认页入口，依赖 `@tencent/wechat_open_sdk` `1.0.23`、Kuikly Renderer `2.29.1`，要求 API 22。
 
@@ -8,10 +8,10 @@ HarmonyOS 微信授权、图片/网页分享与商家转账确认页入口，依
 
 ```sh
 # 仅 Registry 精确版本已上架、可安装后使用。
-ohpm install @gycrosskit/wechat-native@1.1.1
+ohpm install @gycrosskit/wechat-native@1.1.2
 ```
 
-审核期间可从精确 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-1.1.1) 下载 `WechatNative.har`，核对 `har-release-checksums.txt` 中的冻结摘要后安装；Release HAR 消费不能代替 Registry 上架和安装验收。正式提交通过受控发布器执行，版本标签和请求未知状态按[共用发布流程](https://github.com/gycrosskit/.github/blob/main/docs/发布流程.md)处理。
+候选完成发布后，可从精确 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-1.1.2) 下载 `WechatNative.har`，核对 `har-release-checksums.txt` 中的冻结摘要后安装；Release HAR 消费不能代替 Registry 上架和安装验收。正式提交通过受控发布器执行，版本标签和请求未知状态按[共用发布流程](https://github.com/gycrosskit/.github/blob/main/docs/发布流程.md)处理。
 
 在 EntryAbility 配置唯一 `WechatClient` 并转交 Want；初始化前可调用 `forwardWant`。恢复使用宿主同步原子可信 `WechatRequestStore`，不能从页面或回跳恢复 transaction/state；监听与页面结束需成对取消、移除和 dispose。
 
@@ -19,7 +19,7 @@ ohpm install @gycrosskit/wechat-native@1.1.1
 
 图片使用纯 Base64 PNG/JPEG，最大 25 MiB；指定联系人返回 `unsupported`，不降级普通好友。`requested` 不表示业务成功，转账页面回执不表示到账。
 
-完整 API、接线和许可见[仓库 README](https://github.com/gycrosskit/wechat/blob/har-1.1.1/README.md)。
+完整 API、接线和许可见[仓库 README](https://github.com/gycrosskit/wechat/blob/har-1.1.2/README.md)。
 
 ## 请求与回执归属
 
