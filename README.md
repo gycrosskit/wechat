@@ -2,7 +2,7 @@
 
 Kuikly 由宿主统一选择版本；组件构建基线、允许范围及消费验证边界见[功能与平台差异](docs/功能与平台差异.md#kuikly-版本与宿主选择)。
 
-> 当前渠道版本：iOS Git Pod/SPM `native-1.1.1`、HAR 候选 `har-1.1.2`，Maven（core/Kuikly）保持 `1.1.0`。iOS 排队回执的取消/同 ID 复用隔离及 Renderer 范围声明见下文；Kuikly 构建基线保持 2.29.1。实际发布和消费状态以精确 Release/Registry 收据为准，历史标签及验收范围不变。
+> 当前渠道版本：iOS Git Pod/SPM `native-1.1.1`、已发布 HAR [`har-1.1.2`](https://github.com/gycrosskit/wechat/releases/tag/har-1.1.2)，Maven（core/Kuikly）保持 `1.1.0`。iOS 排队回执的取消/同 ID 复用隔离及 Renderer 范围声明见下文；Kuikly 构建基线保持 2.29.1。实际发布和消费状态以精确 Release/Registry 收据为准，历史标签及验收范围不变。
 
 当前分支包含未发布的按类型当前轮及通用接线下沉修复：登录、分享、转账互不等待；同类型新请求替换旧轮，并通知本地取消，不伪造 SDK 回执。图片与网页共用分享轮次；通用回执投影、平台归属能力、Base64 直通和 OHOS 监听恢复由组件统一提供。iOS 无 transaction 的候选限制保留。安装示例、已发布版本与历史验收不包含本任务改动，宿主远程版本和正式提审依赖未升级。合同见[按类型当前轮](docs/功能与平台差异.md#按类型当前轮合同未发布)。
 
@@ -157,24 +157,24 @@ dependencyResolutionManagement {
     }
 }
 // commonMain.dependencies
-implementation("com.github.gycrosskit.wechat:wechat-core:1.0.1")
+implementation("com.github.gycrosskit.wechat:wechat-core:1.1.0")
 // Android/iOS/OHOS Kuikly 宿主额外添加：
-implementation("com.github.gycrosskit.wechat:wechat-kuikly:1.0.1")
+implementation("com.github.gycrosskit.wechat:wechat-kuikly:1.1.0")
 ```
 
 iOS 选择 Git Pod，或 Xcode 的 Swift Package：
 
 ```ruby
-pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-1.0.1'
+pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag => 'native-1.1.1'
 ```
 
-Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-1.0.1`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，Git Pod 不通过 CocoaPods Specs 分发。Native SPM 与 Pod 二选一；使用 `/Kuikly` subspec 时由其包含 Native，不再额外打包同名 SPM 产品。
+Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-1.1.1`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，Git Pod 不通过 CocoaPods Specs 分发。Native SPM 与 Pod 二选一；使用 `/Kuikly` subspec 时由其包含 Native，不再额外打包同名 SPM 产品。
 
-HarmonyOS 本版 HAR 为 `0.1.9-rc.1`，配套 Maven `0.1.10-rc.1` / Git Pod `native-0.1.9`。按精确 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-0.1.9-rc.1) 的 `WechatNative.har` 和 `har-release-checksums.txt` 冻结 SHA-256 校验后，可验证 Release HAR 消费；OHPM 审核及 Registry 安装/编译分别核实，不覆盖旧标签或归档。
+HarmonyOS 当前 HAR 为 `1.1.2`，Maven 为 `1.1.0`，Git Pod / SPM 使用 `native-1.1.1`。按精确 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-1.1.2) 的 `WechatNative.har` 和 `SHA256SUMS` 校验后，再验证 Release HAR 消费；OHPM 审核及 Registry 安装/编译分别核实，Release 存在不代表 Registry 已上架或消费通过。
 
 ```sh
 # 仅 Registry 精确版本可查询、可安装后使用；审核受理不等于上架。
-ohpm install @gycrosskit/wechat-native@1.0.1
+ohpm install @gycrosskit/wechat-native@1.1.2
 ```
 
 受控发布由原发布器按版本确定 dist-tag：正式版使用默认 `latest`，预发布使用 `candidate-<完整版本>`；不手工固定 `next`，未知结果沿原 journal 查回。公开 Release HAR 消费与 Registry 安装分别验收，操作入口见[开发与验证](docs/开发与验证.md#har-rc-冻结与公开消费)。
