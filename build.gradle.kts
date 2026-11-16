@@ -4,7 +4,7 @@ plugins {
 }
 allprojects {
     group = providers.environmentVariable("GROUP").orElse("com.github.gycrosskit.wechat").get()
-    version = providers.environmentVariable("VERSION").orElse("1.1.2").get()
+    version = providers.environmentVariable("VERSION").orElse("1.1.3").get()
 }
 
 subprojects {
