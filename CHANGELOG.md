@@ -1,5 +1,11 @@
 # 更新记录
 
+## 1.1.3（渠道统一候选，未发布）
+
+- Maven、Git Pod/SPM、HAR 与私有 OHPM 使用同一版本；旧 Tag、制品与摘要保持不变。
+- 生产实现和厂商 SDK 不变，Renderer 构建依赖固定为原有 `2.29.1`。
+- `1.1.2` 的既有 Tag 不移动；新版本通过当前项目入口编译，再由新版 Jenkins release 发布。
+
 ## 1.1.2（Maven/Native 统一版本候选，未发布）
 
 - Maven/Git Pod/SPM 补齐至 1.1.2；HAR/OHPM 沿用已发布 har-1.1.2，不重新构建或提交。
