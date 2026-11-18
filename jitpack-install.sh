@@ -6,6 +6,8 @@ repository="${1:?Pass the component repository name}"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*)?$ ]] || { echo 'Invalid immutable version' >&2; exit 1; }
 commit="$(git -c safe.directory="$PWD" rev-parse --verify HEAD)"
 tree="$(git -c safe.directory="$PWD" rev-parse --verify 'HEAD^{tree}')"
+destinations=("$HOME/.m2/repository" "$PWD/build/release-maven")
+if [[ $# == 2 ]]; then destinations=("$2"); elif [[ $# != 1 ]]; then exit 2; fi
 archive="${repository}-maven.tar.gz"
 staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
@@ -16,7 +18,7 @@ for name in "$archive" source-receipt.json SHA256SUMS; do
   curl -fL --retry 3 --connect-timeout 30 --max-time 300 --max-filesize "$maximum" -o "$staging/$name" "$release/$name"
 done
 # 同次受管 Release 的来源和摘要绑定冻结原件，不重编或沿用旧源码摘要。
-python3 -I - "$repository" "$VERSION" "$commit" "$tree" "$staging" "$HOME/.m2/repository" "$PWD/build/release-maven" <<'VERIFY'
+python3 -I - "$repository" "$VERSION" "$commit" "$tree" "$staging" "${destinations[@]}" <<'VERIFY'
 import hashlib, json, os, re, sys, tarfile
 from pathlib import Path, PurePosixPath
 repository, version, commit, tree, staging, *destinations = sys.argv[1:]
@@ -30,7 +32,7 @@ def unique(pairs):
     return result
 raw = (staging / "source-receipt.json").read_bytes()
 assert len(raw) <= 1048576, "Receipt exceeds bound"
-receipt = json.loads(raw, object_pairs_hook=unique)
+receipt = json.loads(raw.decode("utf-8"), object_pairs_hook=unique)
 assert type(receipt) is dict and type(receipt.get("version")) is int and receipt["version"] == 1, "Invalid receipt"
 assert receipt.get("component") == repository and receipt.get("releaseVersion") == version, "Release identity mismatch"
 repo = receipt.get("repository")
@@ -54,7 +56,7 @@ with path.open("rb") as stream:
     for block in iter(lambda: stream.read(1048576), b""):
         digest.update(block)
 assert digest.hexdigest() == item["sha256"], "Archive digest mismatch"
-with tarfile.open(path, "r:gz") as bundle:
+with tarfile.open(str(path), "r:gz") as bundle:
     members, names, expanded = [], set(), 0
     for member in bundle:
         relative = PurePosixPath(member.name)
@@ -68,9 +70,9 @@ with tarfile.open(path, "r:gz") as bundle:
         members.append(member)
     assert members, "Empty archive"
     for destination in destinations:
-        root = Path(destination).resolve()
+        root = Path(os.path.realpath(destination))
         root.mkdir(parents=True, exist_ok=True)
         for member in members:
-            assert os.path.commonpath((str(root), str((root / member.name).resolve()))) == str(root), "Archive escapes destination"
-        bundle.extractall(root, members=members)
+            assert os.path.commonpath((str(root), os.path.realpath(str(root / member.name)))) == str(root), "Archive escapes destination"
+        bundle.extractall(str(root), members=members)
 VERIFY

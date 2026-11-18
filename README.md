@@ -1,8 +1,10 @@
 # GY CrossKit Wechat
 
+新版 Maven 发布由 Jenkins 生成同版本归档、`source-receipt.json` 和 `SHA256SUMS`。JitPack 核对标签来源、归档尺寸和摘要后安装同一份制品。历史发布按原版本 Tag 复验。
+
 Kuikly 由宿主统一选择版本；组件构建基线、允许范围及消费验证边界见[功能与平台差异](docs/功能与平台差异.md#kuikly-版本与宿主选择)。
 
-> 统一版本候选 `1.1.3`：Maven、iOS Git Pod/SPM、HAR 与私有 OHPM 待本地验证和新版 Jenkins release 发布。生产实现和厂商 SDK 不变，Renderer 固定为原有 `2.29.1`；旧 `1.1.2` Tag、制品和摘要不覆盖。新渠道构建、公开消费及设备行为分别验收。
+> 统一版本候选 `1.1.3`：Maven、iOS Git Pod/SPM、私有 OHPM 待本地验证和新版 Jenkins release 发布。生产实现和厂商 SDK 不变，Renderer 固定为原有 `2.29.1`；旧 `1.1.2` Tag、制品和摘要不覆盖。新渠道构建、公开消费及设备行为分别验收。
 
 当前维护实现包含按类型当前轮及通用接线下沉能力：登录、分享、转账互不等待；同类型新请求替换旧轮，并通知本地取消，不伪造 SDK 回执。图片与网页共用分享轮次；通用回执投影、平台归属能力、Base64 直通和 OHOS 监听恢复由组件统一提供。iOS 无 transaction 的候选限制保留。这些实现已包含于现有 Maven 1.1.0 / Native 1.1.1 / HAR 1.1.2；本轮只统一渠道版本，宿主依赖与设备行为仍需独立验收。合同见[按类型当前轮](docs/功能与平台差异.md#按类型当前轮合同)。
 
@@ -170,14 +172,14 @@ pod 'GycWechatNative', :git => 'https://github.com/gycrosskit/wechat.git', :tag 
 
 Swift Package URL 为 `https://github.com/gycrosskit/wechat.git`，固定 revision/tag 为 `native-1.1.2`，产品 `GycWechatNative`。Package 不包含微信 binaryTarget，宿主仍需提供并链接官方 XCFramework；Git Pod 会安装精确版本厂商依赖，Git Pod 不通过 CocoaPods Specs 分发。Native SPM 与 Pod 二选一；使用 `/Kuikly` subspec 时由其包含 Native，不再额外打包同名 SPM 产品。
 
-HarmonyOS 当前 HAR 为 `1.1.2`；Maven/Git Pod/SPM 候选补齐至 `1.1.2`（`native-1.1.2`）。按精确 [HAR Release](https://github.com/gycrosskit/wechat/releases/tag/har-1.1.2) 的 `WechatNative.har` 和 `SHA256SUMS` 校验后，再验证 Release HAR 消费；OHPM 审核及 Registry 安装/编译分别核实，Release 存在不代表 Registry 已上架或消费通过。
+HarmonyOS 从私有 OHPM 安装对应精确版本，Registry 安装与宿主编译按对应 Jenkins 回执核验。
 
 ```sh
 # 仅 Registry 精确版本可查询、可安装后使用；审核受理不等于上架。
 ohpm install @gycrosskit/wechat-native@1.1.2
 ```
 
-受控发布由原发布器按版本确定 dist-tag：正式版使用默认 `latest`，预发布使用 `candidate-<完整版本>`；不手工固定 `next`，未知结果沿原 journal 查回。公开 Release HAR 消费与 Registry 安装分别验收，操作入口见[开发与验证](docs/开发与验证.md#har-rc-冻结与公开消费)。
+受控发布由原发布器按版本确定 dist-tag：正式版使用默认 `latest`，预发布使用 `candidate-<完整版本>`；不手工固定 `next`，未知结果沿原 journal 查回。Registry 安装和 ArkTS 编译分别验收，操作入口见[开发与验证](docs/开发与验证.md#鸿蒙发布与消费)。
 
 ## 最小接入
 
@@ -240,7 +242,7 @@ Node替身检查覆盖旧namespace、重启/隔离、删除与落盘失败；不
 
 候选冻结与消费按[发布流程](https://github.com/gycrosskit/.github/blob/main/docs/发布流程.md)使用独立 Job：`component-ci/package` 绑定准确 SOURCE_SHA 生成冻结候选并验证私有消费，`component-ci/release` 绑定准确 Tag/候选执行发布及独立公开消费。核对冻结归档、精确 tag/commit、完整 publication 清单和公开文件，不使用 `mavenLocal`、本库源码或 staging 替换公开依赖；各阶段证据分别记录。
 
-HAR 构建与精确公开 HAR 消费使用已有 `gycrosskit-wechat-har` Jenkins job 和受控 HarmonyOS CLT，不能由 Maven job 的成功代算。OHPM Registry 安装与真机业务仍分别验收。
+HarmonyOS HAR 使用受控 HarmonyOS CLT 构建，由受管 Jenkins 分发到私有 OHPM。OHPM Registry 安装与真机业务分别验收。
 
 阶段、缓存、有限网络重试、失败记录与证据边界见[共用 CI 规则](https://github.com/gycrosskit/.github/blob/main/docs/持续集成门禁.md)；本库实际平台命令以 Jenkins 的固定版本 recipe 为准。源码通过、远程消费、HAR/ohpm 与设备验收分别记录。
 
