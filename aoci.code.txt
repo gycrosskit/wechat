@@ -1,0 +1,213 @@
+#AOCI-CODE-VOLUME: 1
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/===
+.gitattributes[FV4T]: F:统一文本LF检出以保持AOCI原始字节摘要一致 | R:- | A:- | S:二进制保持原字节
+.gitignore[FV4T]: F:排除构建缓存、本机配置、验证产物与CI下发脚本 | R:- | A:- | S:-
+AGENTS.md[SQ8L]: F:约束微信可信pending与回执归属并定义AOCI认知读取维护合同 | R:code:wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatSession.kt | A:- | S:存储失败必须阻止提交或消费，外部回跳不能重建可信资格；REQUESTED和转账页success不证明业务完成或到账
+CHANGELOG.md[SV4M]: F:按版本记录三渠道统一、按类型轮次和原生排队凭据取消修复 | R:- | A:- | S:候选版本不代表发布，旧Tag和制品摘要保留
+GycWechatNative.podspec[FV7T]: F:定义默认Native与可选Kuikly Pod并锁定官方微信SDK | R:code:iosApp/Sources/GycWechatNative/WechatClient.swift | A:GycWechatNative/Native,GycWechatNative/Kuikly | S:静态framework以链接SDK2.0.7静态库；Kuikly仅可选subspec，最低iOS15，来源native版本Tag
+LICENSE[SS2M]: F:规定Apache2许可、分发条件及免责条款 | R:- | A:- | S:-
+Package.swift[FV7T]: F:发布只含Swift原生微信源码的SPM产品并链接外部SDK框架 | R:code:iosApp/Sources/GycWechatNative/WechatClient.swift | A:GycWechatNative | S:宿主通过Pod或官方XCFramework提供WechatOpenSDK，本包无binaryTarget及默认Kuikly依赖
+README.md[SI8S]: F:提供微信三端安装、最小接入与业务证据边界并链接AOCI和平台合同 | R:code:wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatClient.kt,code:docs/功能与平台差异.md | A:- | S:宿主拥有唯一原生client与可信store，回跳只交官方SDK校验；iOS候选不升为VERIFIED，转账页success需后端核对到账
+VALIDATION.md[SQ3M]: F:保留2026年9月实际源码、SDK、Session与独立本地产物消费记录 | R:- | A:- | S:历史回归不代算当前设备或远程版本验收
+build.gradle.kts[FV6T]: F:统一Maven组、候选版本、staging及Apache许可 | R:code:gradle/libs.versions.toml | A:GROUP,VERSION | S:默认1.1.3为源码候选，环境可覆盖
+gradle.properties[FV3T]: F:配置AndroidX、Gradle堆、单worker与禁用目标兼容策略 | R:- | A:- | S:-
+gradlew[XV3M]: F:在Unix解析Java与wrapper路径并透传Gradle参数 | R:code:gradle/wrapper/gradle-wrapper.properties | A:命令行参数 | S:-
+gradlew.bat[XV3T]: F:在Windows查找Java并启动Gradle wrapper | R:code:gradle/wrapper/gradle-wrapper.properties | A:命令行参数 | S:-
+jitpack-install.sh[OV7S]: F:核对不可变Tag来源和安全归档摘要后安装同版Maven原件 | R:code:jitpack.yml | A:repository,VERSION,可选目录 | S:核对HEAD/tree、尺寸/hash，拒绝穿越、链接、重复成员和膨胀包
+jitpack.yml[FV5T]: F:使用JDK21运行微信同版Maven原件安装入口 | R:code:jitpack-install.sh | A:JitPack install | S:-
+release-pack.py[OV6T]: F:仅归档指定版本Maven publications并回读metadata JSON | R:- | A:repository,output,version | S:无publication拒绝，剔除AppleDouble且保留历史版本字节
+settings.gradle.kts[FV6T]: F:统一插件和依赖仓库并包含wechat-core与wechat-kuikly | R:code:build.gradle.kts | A:wechat根构建 | S:禁止子项目私加仓库，厂商Kotlin依赖保留既有源
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/docs/===
+0.1.4远程发布验收.md[SV3T]: F:保存0.1.4精确来源、公开Maven及HAR下载消费历史证据 | R:- | A:- | S:当时OHPM接受审核但Registry版本NOTFOUND
+0.1.5远程发布验收.md[SV3M]: F:保存Android Main边界修复及0.1.5不可变发布与远程消费证据 | R:- | A:- | S:SDK受理、回执和到账证据分别判断
+native-0.1.4发布验收.md[SV3M]: F:保留Swift OAuth空白code修复的原生Tag与真实SDK消费验收 | R:- | A:- | S:native标签不生成新Maven坐标，其他渠道沿用原件
+功能与平台差异.md[SI9L]: F:集中定义微信三端能力、可信回执、当前轮和SDK差异及验证范围 | R:code:wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatClient.kt,code:wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatSession.kt | A:- | S:按类型并行且同类替换，图片网页共享分享轮；iOS无transaction候选不能升级为VERIFIED；取消需撤销已排队未交付OAuth凭据
+完整源码审查.md[SQ4M]: F:列出历史微信自有生产实现审查、公开调用链与原生发布准备证据 | R:- | A:- | S:只证明原记录版本和范围，设备SDK回跳独立验收
+开发与验证.md[SQ7L]: F:提供微信定向回归、真实SDK构建及三渠道独立消费入口 | R:- | A:- | S:组件用例仅在本仓运行，宿主验证公开接线；编译、回执、公开消费和业务验收分别留证
+指定联系人分享对齐.md[SI6T]: F:记录iOS官方SDK指定联系人图片分享字段与两方openId合同 | R:code:iosApp/Sources/GycWechatNative/WechatClient.swift | A:shareImage指定联系人 | S:仅Session场景且需可信双方ID；ID不写日志或pending，仍沿iOS单笔候选归属限制
+接入指南.md[SI8L]: F:说明原生client与Kuikly receiver、可信store、回跳和各端资源接线 | R:- | A:- | S:Native配套版本取podspec source.tag，不从Maven版本猜；网页URL10KiB UTF8，标题描述按UTF16和UTF8双边界截断
+远程闭合验收.md[SV3T]: F:保存0.1.3真实Maven、Git Pod、SPM和HAR远程消费历史证据 | R:- | A:- | S:flush失败阻止SDK发送，外部Want不能生成可信pending
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/gradle/===
+libs.versions.toml[FV6T]: F:集中固定厂商Kotlin、Kuikly及AGP插件版本 | R:code:build.gradle.kts | A:libs版本目录 | S:-
+native-toolchain.properties[FV5T]: F:登记厂商Kotlin和iOS/OHOS Native目标集合 | R:- | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/gradle/wrapper/===
+gradle-wrapper.properties[FV4T]: F:固定Gradle8.11.1镜像分发及SHA256校验 | R:- | A:- | S:分发镜像仍需匹配固定摘要
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/iosApp/===
+KmpWechatBridge.swift[II7T]: F:示例适配KMP IosWechatBridge到唯一Swift client并映射请求与回执 | R:code:wechat-core/src/iosMain/kotlin/io/github/gycrosskit/wechat/IosWechatClient.kt,code:iosApp/Sources/GycWechatNative/WechatClient.swift | A:KmpWechatBridge | S:WechatCore须替换为宿主导出framework名；透传归属与候选requestId，不将SDK受理变业务成功
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/iosApp/Sources/GycWechatKuikly/===
+WechatModule.swift[II9M]: F:将唯一原生微信client的提交和回执按Renderer请求owner桥接到Context队列 | R:code:iosApp/Sources/GycWechatNative/WechatClient.swift | A:WechatModule.clientProvider,hrv_call,invalidate | S:OAuth成功在App活跃后才交付，buffer和Context排队凭据均按独立UUID资格撤销；cancel先撤销队列再调client；析构清理只捕获资源，取消完再解除reservation，不能retain self
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/iosApp/Sources/GycWechatNative/===
+WechatClient.swift[II9M]: F:在Main桥接官方SDK OAuth、图片网页分享、转账确认并投递归属受限回执 | R:code:iosApp/Sources/GycWechatNative/WechatSession.swift | A:WechatClient,WechatReceipt,WechatAttribution | S:OAuth安全随机state匹配且journal清除成功后消费；分享无transaction仅singlePending候选，图片仅受理；URL仅摘要去重且journal失败可重试，code禁止持久化，pageResult不证明到账
+WechatSession.swift[DI9S]: F:管理授权分享转账独立当前轮、可信OAuth日志与iOS候选归属 | R:- | A:WechatAuthorizationStore,WechatPendingAuthorization,WechatSession,wechatText | S:原子保存新OAuth成功后才替换旧轮，清除失败保留消费/取消资格；已发送分享替换或取消后永久失去候选证明；requestID不可复用，文字先UTF16再UTF8且保留surrogate
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/ohos/AppScope/===
+app.json5[FV3T]: F:声明微信HAR工程应用身份和历史应用版本 | R:- | A:- | S:应用版本与OHPM版本分别管理
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/ohos/===
+build-profile.json5[FV5T]: F:绑定WechatNative模块与HarmonyOS API22产品目标 | R:code:ohos/wechat-native/build-profile.json5 | A:default产品 | S:target和compatible均6.0.2(22)
+hvigorfile.ts[FV3T]: F:注册根工程Hvigor appTasks | R:- | A:- | S:-
+oh-package.json5[FV3T]: F:声明Hvigor26根工程依赖容器 | R:- | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/ohos/hvigor/===
+hvigor-config.json5[FV3T]: F:固定Hvigor26模型及默认运行配置 | R:- | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/ohos/wechat-native/===
+CHANGELOG.md[SV3M]: F:按HAR版本记录当前轮、私仓和渠道候选及包内变更记录 | R:- | A:- | S:1.1.3声明候选，生产实现和SDK保持，旧Tag字节保留
+Index.ets[LI6T]: F:导出HAR微信client、回执、可信store及Kuikly Module | R:code:ohos/wechat-native/src/main/ets/WechatClient.ets,code:ohos/wechat-native/src/main/ets/WechatModule.ets,code:ohos/wechat-native/src/main/ets/WechatPreferencesRequestStore.ets | A:WechatClient,WechatReceipt,WechatStatus,WechatRequestStore,WechatModule,WechatPreferencesRequestStore | S:-
+LICENSE[SS2M]: F:携带HAR分发所需Apache2许可文本 | R:- | A:- | S:-
+README.md[SI6T]: F:说明HAR精确安装、唯一client与Want转发和可信store及图片生命周期 | R:code:ohos/wechat-native/src/main/ets/WechatClient.ets | A:@gycrosskit/wechat-native | S:指定联系人unsupported；图片受理释放提交占用且不产生业务分享回执，已交SDK文件保留到匹配回执
+build-profile.json5[FV4T]: F:配置WechatNative Stage模式HarmonyOS目标 | R:- | A:default目标 | S:-
+hvigorfile.ts[FV3T]: F:注册微信HAR模块构建任务 | R:- | A:- | S:-
+oh-package.json5[FV7T]: F:定义微信HAR候选版本、公开入口和官方SDK与Renderer精确依赖 | R:code:ohos/wechat-native/Index.ets | A:@gycrosskit/wechat-native@1.1.3 | S:SDK1.0.23、Renderer2.29.1固定，版本声明不证明发布
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/ohos/wechat-native/src/main/ets/===
+WechatClient.ets[II9M]: F:统一配置OHOS进程微信入口并按类型管理请求、可信OAuth与SDK校验回执 | R:code:ohos/wechat-native/src/main/ets/WechatPreferencesRequestStore.ets | A:WechatClient,WechatRequestStore,WechatPendingRequest,WechatReceipt,WechatStatus | S:同类替换先原子保存OAuth再废旧轮；回执严格transaction/kind/state，图片URI独立保留至匹配回执；调用方context逐次更新且appId不可换，早Want仍交官方校验，最多4个Want及64笔回执暂存
+WechatModule.ets[II8S]: F:以页面ID集合桥接微信请求监听、可信恢复、提交结果和终态回执 | R:code:ohos/wechat-native/src/main/ets/WechatClient.ets | A:WechatModule.call,onDestroy | S:provider只在显式listen及后续请求调用，失败后可恢复；每次参数对象作独立token，旧Promise不能消费复用ID；取消journal失败保留owner，释放逐类尝试后抛首个异常
+WechatPreferencesRequestStore.ets[PI9T]: F:同步原子保存可信微信pending并支持宿主旧Preferences namespace | R:code:ohos/wechat-native/src/main/ets/WechatClient.ets | A:load,save | S:默认按appId隔离；坏JSON抛错，flush失败回退进程缓存且保留原异常，禁止从外部Want生成记录
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/ohos/wechat-native/src/main/===
+module.json5[FV4T]: F:声明WechatNative HAR类型和default/tablet设备 | R:- | A:WechatNative | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/scripts/===
+build.sh[OV7T]: F:按显式平台编译微信生产模块并调用Maven/HAR打包入口 | R:code:scripts/package-maven.sh,code:scripts/ci-build-kuikly-render.sh | A:compile|package --platform | S:iOS额外构建真实可选Kuikly Pod，Harmony compile继续打HAR，不串联业务测试
+check-har.py[XQ6T]: F:不解包而验证冻结HAR路径安全、精确包名版本及changelog和公开导出 | R:code:ohos/wechat-native/oh-package.json5 | A:check_har(path,version) | S:拒绝绝对/穿越/重复/特殊成员，版本标题须精确包含当前版本
+check-maven.py[XQ7M]: F:校验本地Maven身份、变体引用、制品字节及四种摘要sidecar和许可 | R:- | A:repository,group,version,modules_csv,native_targets_csv | S:available-at必须指向真实同名变体，可限制JVM字节码major
+check-public-maven.py[XQ7L]: F:只读审计公开JitPack Tag及publication清单、实物与sidecar | R:- | A:--repo,--version,--commit,--expected-publications | S:完整SHA和公开ok Tag必须匹配，渠道缺失摘要单独留证，不运行消费者构建
+ci-build-kuikly-render.sh[OV6S]: F:构建固定Renderer与本地或精确远程Tag的真实Simulator Pod | R:code:GycWechatNative.podspec | A:绝对构建目录,可选Pod及远程来源 | S:严格校验Pod和来源参数，SDK构建不代算设备或消费
+ci-java.security[FV3T]: F:设置CI正向DNS缓存十分钟并禁用负缓存 | R:- | A:- | S:-
+ci-repositories.gradle[FV6T]: F:配置源码编译缓存及行为测试真实执行和厂商仓库版本过滤 | R:- | A:GYC_CI_BUILD_CACHE | S:测试禁缓存和up-to-date跳过，Eazytec仅供厂商适配版本
+jitpack-metadata.py[XV7T]: F:预校验全体metadata后裁剪不安全classifier及空资源变体 | R:- | A:normalize,staging路径 | S:非空资源禁止裁剪，验证全体后才写避免半改仓库
+package-har.sh[OV7T]: F:在受管CLT运行ArkTS回归、真实HAR构建及冻结包内验证与摘要 | R:code:scripts/check-har.py,code:tests/wechat.cjs,code:tests/preferences-store.cjs | A:HARMONY_CLT_HOME | S:拒绝已有release-candidate，唯一HAR冻结后prepublish并记录源码SHA，不触发正式上传
+package-maven.sh[OV7T]: F:发布当前版本到全新staging并核验metadata后冻结Maven候选和来源摘要 | R:code:scripts/check-maven.py,code:scripts/jitpack-metadata.py,code:release-pack.py | A:VERSION | S:拒绝已有同版staging与release-candidate，冻结记录包括源码SHA与版本
+test-check-maven.py[TQ6T]: F:以真实文件验证Maven实物门禁拒绝坏变体摘要、许可和清单 | R:code:scripts/check-maven.py | A:PublicationGate | S:消费者编译不能替代完整publication校验
+test-jitpack-metadata.py[TQ5T]: F:以真实metadata与ZIP检查资源裁剪、引用和失败原子性 | R:code:scripts/jitpack-metadata.py | A:PublicationContracts | S:-
+verify-release.sh[OV7T]: F:从不可变远端Tag校验同版归档后按冻结清单审计公开Maven实物 | R:code:jitpack-install.sh,code:scripts/check-public-maven.py | A:VERSION | S:预期publication来自已冻结归档，不从JitPack自报清单反推；只使用真实Tag来源
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/tests/===
+AndroidSdkCheck.java[TQ6T]: F:使用真实微信Android SDK checkArgs验证图片上限和指定联系人字段 | R:- | A:AndroidSdkCheck.main | S:只替换日志，不发送微信请求；需要启用Java断言
+preferences-store.cjs[TI6T]: F:运行生产Preferences store验证旧namespace、重启隔离、删除和flush回滚 | R:code:ohos/wechat-native/src/main/ets/WechatPreferencesRequestStore.ets | A:Node断言入口 | S:Preferences为受控替身，flush与回滚失败保留原异常
+swift-callback.py[TI6T]: F:编译完整生产Swift client及Session以SDK替身验证URL回跳和日志重试 | R:code:iosApp/Sources/GycWechatNative/WechatClient.swift,code:tests/swift-callback/main.swift | A:Python回归入口 | S:只替换厂商API和缩略图转换，生成source-proof绑定真实源码，不证明官方SDK ABI
+swift-receipt.py[TI6M]: F:提取生产Swift分享和回包方法验证指定联系人、code和Module监听归属 | R:code:iosApp/Sources/GycWechatNative/WechatClient.swift | A:Python生成并运行Swift回归 | S:SDK最小替身不替代原厂ABI，候选归属不得升级为transaction证明
+test_jitpack_install.py[TQ6T]: F:离线执行真实安装校验段验证来源、摘要与归档安全拒绝 | R:code:jitpack-install.sh | A:JitPackInstallTest | S:坏数据须在解包前失败，不调用网络或SDK
+wechat.cjs[TI8L]: F:转译真实OHOS client和Module验证可信日志、Want校验、当前轮及资源生命周期 | R:code:ohos/wechat-native/src/main/ets/WechatClient.ets,code:ohos/wechat-native/src/main/ets/WechatModule.ets | A:Node断言入口 | S:厂商、文件、图像SDK为替身；覆盖66次重试、旧ack/cancel、早回执、provider恢复与逐类型释放失败隔离
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/tests/swift-callback/===
+main.swift[TI7M]: F:驱动生产Swift当前轮与回跳逻辑验证state、journal、旧代理和重入隔离 | R:code:iosApp/Sources/GycWechatNative/WechatSession.swift | A:Swift回归main | S:SDK是受控替身，覆盖66次分享转账重试和原子替换失败，不证明设备回跳
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/ci/===
+test_cache_contract.py[TQ3T]: F:静态检查源码编译缓存及行为测试禁复用策略存在 | R:code:scripts/ci-repositories.gradle | A:Python断言入口 | S:文本检查不证明真实任务执行
+test_release_native_version.py[TQ6T]: F:离线验证Renderer允许范围和精确Native Tag传到Pod/SPM消费者 | R:code:GycWechatNative.podspec,code:verification/swift-consumer/Package.swift | A:ReleaseNativeVersionTest | S:使用命令替身，不构建或解析远程SDK，禁止从Maven版本猜Native标签
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/gradle/===
+build.gradle.kts[FV6T]: F:建立独立多平台Maven消费者并可显式开启Native receiver探针 | R:code:verification/gradle/settings.gradle.kts | A:wechatVersion,verifyNativeModule,kuiklyRenderFrameworkDir | S:默认仅OHOS依赖Kuikly，开启Native接线后共同依赖并链接真实Renderer
+gradle.properties[FV3T]: F:配置独立消费者AndroidX、Gradle堆与单worker | R:- | A:- | S:-
+settings.gradle.kts[FV5T]: F:限定微信坐标仓库并配置独立消费者插件及SDK源 | R:code:verification/gradle/build.gradle.kts | A:wechatMavenRepo | S:默认JitPack，显式staging验证与公网消费分别留证
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/gradle/src/androidMain/kotlin/===
+AndroidProbe.kt[TI5T]: F:编译验证Android可信store构造及同步和异步Intent回跳入口 | R:code:wechat-core/src/androidMain/kotlin/io/github/gycrosskit/wechat/AndroidWechatClient.kt | A:androidProbe,androidAsyncIntentProbe | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/gradle/src/commonMain/kotlin/===
+Probe.kt[TI5T]: F:编译验证微信公共请求、回执及可注入原子store接口 | R:code:wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatClient.kt | A:probe,RequestStoreProbe | S:闭包只编译不执行微信业务
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/gradle/src/iosMain/kotlin/===
+IosProbe.kt[TI4T]: F:编译验证iOS client接受宿主bridge | R:code:wechat-core/src/iosMain/kotlin/io/github/gycrosskit/wechat/IosWechatClient.kt | A:iosProbe | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/gradle/src/ohosArm64Main/kotlin/===
+OhosProbe.kt[TI5T]: F:编译验证OHOS Module可信恢复、cancel和dispose公开入口 | R:code:wechat-kuikly/src/commonMain/kotlin/io/github/gycrosskit/wechat/kuikly/WechatModule.kt | A:ohosProbe,cancelProbe | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/gradle/src/receiverAndroid/kotlin/===
+ReceiverProbe.kt[TI5T]: F:编译验证真实Renderer注册唯一Android微信client | R:code:wechat-kuikly/src/androidMain/kotlin/io/github/gycrosskit/wechat/kuikly/AndroidWechatModule.kt | A:registerReceiver | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/gradle/src/receiverCommon/kotlin/===
+KuiklyProbe.kt[TI5T]: F:编译验证Kuikly回执投影、转账归属能力及Base64提交等待入口 | R:code:wechat-kuikly/src/commonMain/kotlin/io/github/gycrosskit/wechat/kuikly/WechatModule.kt | A:kuiklyModuleProbe,receiptProjectionProbe,transferPageResultProbe,transferOwnershipProbe,base64SubmissionProbe | S:只编译不发起微信业务
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/ohos/AppScope/===
+app.json5[FV3T]: F:声明独立HAR消费者应用身份与历史版本 | R:- | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/ohos/===
+build-profile.json5[FV4T]: F:绑定Consumer HAR模块与HarmonyOS API22产品目标 | R:- | A:default产品 | S:-
+hvigorfile.ts[FV3T]: F:注册独立HAR消费者根appTasks | R:- | A:- | S:-
+oh-package.json5[FV3T]: F:声明独立HAR消费者根依赖容器 | R:- | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/ohos/consumer/===
+Index.ets[TI5T]: F:编译验证HAR client配置、可信Preferences store及cancel公开合同 | R:code:ohos/wechat-native/Index.ets | A:probe,WechatModule | S:只编译，不发起授权或业务恢复
+build-profile.json5[FV3T]: F:配置独立HAR消费者Stage模式目标 | R:- | A:default目标 | S:-
+hvigorfile.ts[FV3T]: F:注册独立消费者HAR构建任务 | R:- | A:- | S:-
+oh-package.json5[FV5T]: F:为独立HAR消费者固定微信包精确版本 | R:- | A:wechat-consumer | S:当前依赖1.1.2，候选1.1.3需实际消费时明确切换并留证
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/ohos/consumer/src/main/===
+module.json5[FV3T]: F:声明Consumer HAR类型和设备范围 | R:- | A:Consumer | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/ohos/hvigor/===
+hvigor-config.json5[FV3T]: F:固定独立HAR消费者Hvigor26模型配置 | R:- | A:- | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/swift-consumer/===
+Package.swift[FV6T]: F:将独立SPM消费者绑定用户指定不可变Native Git revision | R:code:Package.swift | A:VERSION | S:只接受native-x.y.z，缺失或Maven标签直接失败，最低iOS15
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/swift-consumer/Sources/WechatConsumer/===
+Probe.swift[TI5T]: F:独立编译Native client、指定联系人、回执归属和可信授权store接口 | R:code:iosApp/Sources/GycWechatNative/WechatClient.swift | A:probe,imageProbe,receiptProbe,AuthorizationStoreProbe | S:只编译闭包，不发起微信业务
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/swift-kuikly/===
+MocksNative.swift[TQ5T]: F:提供受控微信client和NotificationCenter以检查receiver请求及观察者资源归属 | R:- | A:WechatClient,WechatReceipt,NotificationCenter | S:测试替身记录取消和排队资格，不证明原生SDK行为
+MocksRender.swift[TQ4T]: F:提供可暂停Context队列与析构调用invalidate的Renderer测试替身 | R:- | A:KRBaseModule,KuiklyRenderThreadManager | S:与真实SDK编译验证分开
+MocksUIKit.swift[TQ3T]: F:提供App活跃状态和通知名供OAuth缓冲交付测试 | R:- | A:UIApplication,UIApplicationState | S:-
+PublicAPI.swift[TI5T]: F:作为独立消费者编译可选Pod的clientProvider与receiver公开API | R:code:iosApp/Sources/GycWechatKuikly/WechatModule.swift | A:configureNativeReceiver | S:引用已构建模块，不重新编译receiver源码或发送业务请求
+main.swift[TI7M]: F:驱动生产Swift receiver验证凭据缓冲、Context排队撤销及页面owner清理 | R:code:iosApp/Sources/GycWechatKuikly/WechatModule.swift | A:Swift receiver回归main | S:Native/Renderer边界替身，覆盖取消同ID复用、活跃态通知、早回执和析构，不证明设备SDK业务
+verify-public-api.py[XQ6T]: F:用真实Simulator Pod构建产物独立类型检查receiver公开API | R:code:verification/swift-kuikly/PublicAPI.swift | A:Products目录 | S:链接外部厂商SDK slice，只编译不调用业务
+verify.py[XQ6T]: F:编译受控Native/UIKit/Renderer边界并运行生产Swift receiver回归 | R:code:verification/swift-kuikly/main.swift,code:verification/swift-kuikly/MocksNative.swift,code:verification/swift-kuikly/MocksRender.swift,code:verification/swift-kuikly/MocksUIKit.swift | A:Python检查入口 | S:生产receiver真实执行，SDK与系统生命周期由替身驱动
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/verification/swift/===
+main.swift[TI6T]: F:直接运行真实Swift Session验证三类当前轮、日志原子替换和分享候选降级 | R:code:iosApp/Sources/GycWechatNative/WechatSession.swift | A:Swift session检查main | S:无厂商业务调用，覆盖UTF8边界与清除失败重试
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-core/===
+build.gradle.kts[FV7T]: F:配置微信core多平台变体、官方Android SDK和Session及桥接回归 | R:code:gradle/libs.versions.toml | A:wechat-core | S:Android SDK6.8.34固定，JVM直接编译生产Module并使用薄transport替身，Android JVM11
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-core/src/androidMain/===
+AndroidManifest.xml[FI5T]: F:声明微信包可见性供Android SDK安装检测 | R:- | A:queries com.tencent.mm | S:-
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-core/src/androidMain/kotlin/io/github/gycrosskit/wechat/===
+AndroidWechatClient.kt[II9M]: F:在Main按owner和类型当前轮桥接微信SDK请求、可信Session及精准回执 | R:code:wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatSession.kt | A:AndroidWechatClient,handleIntent,attach,detach,cancel | S:构造不初始化SDK；图片入队前复制且专用executor解码回Main发送，store失败不伪造受理或取消；Intent同步入口仅Main、异步回Result，旧listener与旧cancel不能窃取新轮，最多64笔按原owner缓存
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-core/src/androidUnitTest/kotlin/io/github/gycrosskit/wechat/===
+AndroidWechatClientTest.kt[TI7L]: F:运行真实Android client与receiver验证Main、可信日志、当前轮和回执owner隔离 | R:code:wechat-core/src/androidMain/kotlin/io/github/gycrosskit/wechat/AndroidWechatClient.kt,code:wechat-kuikly/src/androidMain/kotlin/io/github/gycrosskit/wechat/kuikly/AndroidWechatModule.kt | A:AndroidWechatClientTest | S:Robolectric及SDK边界替身，覆盖图片快照、66次转账分享重试和旧取消，设备微信业务另验
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/===
+WechatClient.kt[LI9S]: F:定义微信请求与提交回执、可信pending存储及按证据路由和转账页状态投影 | R:- | A:WechatClient,WechatListener,WechatReceipt,WechatRequestStore,WechatTransferPageStatus,supportsMerchantTransferReceiptOwnership | S:ID实例内不可复用，三类独立且图片网页共用分享轮；REQUESTED仅SDK受理、候选不升格VERIFIED、页面success不证明到账；code禁止日志/持久化，原生Main与页面线程边界分离
+WechatSession.kt[DI9T]: F:维护三类当前轮和可信OAuth日志并严格匹配transaction/kind/state后一次消费 | R:code:wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatClient.kt | A:begin,consume,cancel,finishSubmission,isCurrent,current | S:OAuth原子保存成功才替旧轮；其他类型不能覆盖授权日志，清除失败保留pending；兼容旧非OAuth日志，图片只交提交结果且不能消费最终分享回执
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-core/src/commonTest/kotlin/io/github/gycrosskit/wechat/===
+WechatSessionTest.kt[TI7M]: F:验证Session当前轮、state匹配、原子日志、旧取消隔离及回执投影合同 | R:code:wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatSession.kt,code:wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatClient.kt | A:WechatSessionTest | S:纯逻辑测试不证明原生SDK业务；坏恢复和存储失败不能丢失可信旧轮
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-core/src/iosMain/kotlin/io/github/gycrosskit/wechat/===
+IosWechatClient.kt[II7T]: F:以委派复用宿主Swift bridge的微信请求与Main所有权合同 | R:code:wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatClient.kt | A:IosWechatBridge,IosWechatClient,supportsMerchantTransferReceiptOwnership | S:iOS转账精确归属能力为false；KMP不复制SDK或额外请求状态
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-core/src/jvmMain/kotlin/io/github/gycrosskit/wechat/===
+WechatCapabilities.kt[FI4T]: F:声明JVM无精确原生转账回执归属能力 | R:- | A:supportsMerchantTransferReceiptOwnership=false | S:JVM只用于核心和传输验证
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-core/src/jvmTest/kotlin/com/tencent/kuikly/core/module/===
+Module.kt[TQ4T]: F:模拟Kuikly一次回调回收并保留排队闭包驱动生产Module取消回归 | R:- | A:Module,CallbackRef | S:支持同步取消ack，状态和取消协议来自生产代码
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-core/src/jvmTest/kotlin/com/tencent/kuikly/core/nvi/serialization/json/===
+JSONObject.kt[TQ3T]: F:提供生产WechatModule回归所需JSON字段最小容器 | R:- | A:JSONObject | S:不证明真实SDK序列化
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-core/src/jvmTest/kotlin/io/github/gycrosskit/wechat/kuikly/===
+WechatModuleCancelTest.kt[TI7S]: F:验证生产Module Base64直通、当前轮取消、候选归属和callback释放 | R:code:wechat-kuikly/src/commonMain/kotlin/io/github/gycrosskit/wechat/kuikly/WechatModule.kt | A:WechatModuleCancelTest | S:transport替身不重写取消协议，失败取消须保留原pending与迟回执
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-core/src/ohosArm64Main/kotlin/io/github/gycrosskit/wechat/===
+WechatCapabilities.kt[FI4T]: F:声明OHOS支持按SDK证据精确归属转账回执 | R:- | A:supportsMerchantTransferReceiptOwnership=true | S:能力不取决于当前微信安装状态
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-kuikly/===
+build.gradle.kts[FV6T]: F:配置微信Kuikly多平台调用侧和Android receiver依赖变体 | R:code:wechat-core/build.gradle.kts | A:wechat-kuikly | S:公共传递core与Kuikly，协程实现依赖，Android JVM11
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-kuikly/src/androidMain/kotlin/io/github/gycrosskit/wechat/kuikly/===
+AndroidWechatModule.kt[II8S]: F:按Renderer独占ID桥接唯一Android client提交、精准回执和可信恢复 | R:code:wechat-core/src/androidMain/kotlin/io/github/gycrosskit/wechat/AndroidWechatClient.kt | A:AndroidWechatModule,registerWechatModule | S:取消失败保留owner，早回执与submitted生命周期分离；输入受限Base64和场景校验，destroy先撤资格再Main清理，不替代Application client及回跳接线
+
+===/Users/guoyang/.codex/worktrees/aoci-wechat/wechat/wechat-kuikly/src/commonMain/kotlin/io/github/gycrosskit/wechat/kuikly/===
+WechatModule.kt[II9M]: F:在页面线程桥接三端微信请求、持久监听、提交等待和按证据回执投影 | R:code:wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatClient.kt | A:WechatModule.attach,awaitSubmission,shareImageBase64,cancel,dispose,supportsTransferReceiptOwnership | S:提交最多30秒，早回执仅完成同类型等待；取消ack独立且失败不结束原pending，dispose撤销全部callback；Base64/DataURL规范补位但不解码重编码，宿主上限只能收紧25MiB

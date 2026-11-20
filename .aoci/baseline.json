@@ -1,0 +1,794 @@
+{
+  "version": 1,
+  "created_at": "2026-11-19T08:49:24Z",
+  "updated_at": "2026-11-19T09:15:29Z",
+  "files": {
+    ".gitattributes": {
+      "role": "index",
+      "sha256": "21fa16a2122e2b0360b47502c577428b645437e08e9e87ffba661f84853cb476",
+      "size": 291,
+      "normalized_sha256": "21fa16a2122e2b0360b47502c577428b645437e08e9e87ffba661f84853cb476"
+    },
+    ".gitignore": {
+      "role": "index",
+      "sha256": "0fdda3e7b6ee2ca43e7475e03c0f737910def19d11df95e3843b0e2440909aea",
+      "size": 441,
+      "normalized_sha256": "0fdda3e7b6ee2ca43e7475e03c0f737910def19d11df95e3843b0e2440909aea"
+    },
+    "AGENTS.md": {
+      "role": "index",
+      "sha256": "40ea8cd0e87597d06b12dea186a1e263129d8ea1ff0ac264c463a8e580ede466",
+      "size": 14778,
+      "normalized_sha256": "40ea8cd0e87597d06b12dea186a1e263129d8ea1ff0ac264c463a8e580ede466"
+    },
+    "CHANGELOG.md": {
+      "role": "index",
+      "sha256": "a7a99dc87e188c6e528adc458ed7528b458fc210b332636392348759629ea45d",
+      "size": 5066,
+      "normalized_sha256": "a7a99dc87e188c6e528adc458ed7528b458fc210b332636392348759629ea45d"
+    },
+    "GycWechatNative.podspec": {
+      "role": "index",
+      "sha256": "e525f01c660fd4a5da67539749604de0f27ef23178abe1047b863cb5e71a3e40",
+      "size": 988,
+      "normalized_sha256": "e525f01c660fd4a5da67539749604de0f27ef23178abe1047b863cb5e71a3e40"
+    },
+    "LICENSE": {
+      "role": "index",
+      "sha256": "c69e86da3fc2081768d5839c99bf63ee397a308f78e6f61cd2babc530a36f9cc",
+      "size": 11356,
+      "normalized_sha256": "c69e86da3fc2081768d5839c99bf63ee397a308f78e6f61cd2babc530a36f9cc"
+    },
+    "Package.swift": {
+      "role": "index",
+      "sha256": "9ec760a1a96c5e814fa33b046e75b6758fb2bb8b4e130042fb957947d810298f",
+      "size": 577,
+      "normalized_sha256": "9ec760a1a96c5e814fa33b046e75b6758fb2bb8b4e130042fb957947d810298f"
+    },
+    "README.md": {
+      "role": "index",
+      "sha256": "b081575c3badf5300bcead74591a896b1f0c8cbccbd7129217ba3ad10d259cee",
+      "size": 15600,
+      "normalized_sha256": "b081575c3badf5300bcead74591a896b1f0c8cbccbd7129217ba3ad10d259cee"
+    },
+    "VALIDATION.md": {
+      "role": "index",
+      "sha256": "56fe09f535ed852c59f49d2f52173cc639ef9c6a5ffa7fdcd1ba43ea12196bb0",
+      "size": 11784,
+      "normalized_sha256": "56fe09f535ed852c59f49d2f52173cc639ef9c6a5ffa7fdcd1ba43ea12196bb0"
+    },
+    "aoci.code.txt": {
+      "role": "index",
+      "sha256": "e781e64a6ff41623d76e8589b4751555afd4ce0c6fc65d4735d8fdaf216146ba",
+      "size": 31902,
+      "normalized_sha256": "e781e64a6ff41623d76e8589b4751555afd4ce0c6fc65d4735d8fdaf216146ba"
+    },
+    "aoci.meta.txt": {
+      "role": "index",
+      "sha256": "fbc304fa05182547e96f1f8404c7c30ad6c366bba9589523f1019c2c1da0427c",
+      "size": 1989,
+      "normalized_sha256": "fbc304fa05182547e96f1f8404c7c30ad6c366bba9589523f1019c2c1da0427c"
+    },
+    "aoci.txt": {
+      "role": "index",
+      "sha256": "cf86c873823c88ce50a199d6543e59612cb0703bbc24df465eb66654154ed2dd",
+      "size": 295,
+      "normalized_sha256": "cf86c873823c88ce50a199d6543e59612cb0703bbc24df465eb66654154ed2dd"
+    },
+    "build.gradle.kts": {
+      "role": "index",
+      "sha256": "3a226cbca81eae198239c5ac9ba6be818dbd2d94958d5086fbaae7cdc683961c",
+      "size": 1036,
+      "normalized_sha256": "3a226cbca81eae198239c5ac9ba6be818dbd2d94958d5086fbaae7cdc683961c"
+    },
+    "docs/0.1.4远程发布验收.md": {
+      "role": "index",
+      "sha256": "525c5236db3924190b2cf8eb87aac8d3112dd3eb82a253bf33f37765768458d7",
+      "size": 3187,
+      "normalized_sha256": "525c5236db3924190b2cf8eb87aac8d3112dd3eb82a253bf33f37765768458d7"
+    },
+    "docs/0.1.5远程发布验收.md": {
+      "role": "index",
+      "sha256": "b37817742db2f9578a013e55b42bc8d1b0378ee39aadb784f241a7c7edaf8b00",
+      "size": 4400,
+      "normalized_sha256": "b37817742db2f9578a013e55b42bc8d1b0378ee39aadb784f241a7c7edaf8b00"
+    },
+    "docs/native-0.1.4发布验收.md": {
+      "role": "index",
+      "sha256": "b7e518ff42a82c2e77a91c5121fda2a51fb855dcfc441bce3503c7186ae13ba0",
+      "size": 2365,
+      "normalized_sha256": "b7e518ff42a82c2e77a91c5121fda2a51fb855dcfc441bce3503c7186ae13ba0"
+    },
+    "docs/功能与平台差异.md": {
+      "role": "index",
+      "sha256": "0db7f29247b0a1728e5f3bf9b889389d11977660c66ad712c40214c459aa471c",
+      "size": 24724,
+      "normalized_sha256": "0db7f29247b0a1728e5f3bf9b889389d11977660c66ad712c40214c459aa471c"
+    },
+    "docs/完整源码审查.md": {
+      "role": "index",
+      "sha256": "f8b13ecb318c714538e8f15c48c98f3f4bf9b65d1042725c611e8a50cb150cc8",
+      "size": 6918,
+      "normalized_sha256": "f8b13ecb318c714538e8f15c48c98f3f4bf9b65d1042725c611e8a50cb150cc8"
+    },
+    "docs/开发与验证.md": {
+      "role": "index",
+      "sha256": "b0fd46d80053207b51d2996ce6b8f27d1feb56fde9b128834eeb146257d8e540",
+      "size": 15066,
+      "normalized_sha256": "b0fd46d80053207b51d2996ce6b8f27d1feb56fde9b128834eeb146257d8e540"
+    },
+    "docs/指定联系人分享对齐.md": {
+      "role": "index",
+      "sha256": "258ac77c52cfaf4e2e33c6b2cd3f39dbf05bc12eb6ece3ee47f93656d3908ace",
+      "size": 2849,
+      "normalized_sha256": "258ac77c52cfaf4e2e33c6b2cd3f39dbf05bc12eb6ece3ee47f93656d3908ace"
+    },
+    "docs/接入指南.md": {
+      "role": "index",
+      "sha256": "53b160a395e21c9ad1da02fc9d65d5ed598a31613ef049e877177bc9ad23df83",
+      "size": 23881,
+      "normalized_sha256": "53b160a395e21c9ad1da02fc9d65d5ed598a31613ef049e877177bc9ad23df83"
+    },
+    "docs/远程闭合验收.md": {
+      "role": "index",
+      "sha256": "a2d90939e1edfb720158cb150a3d12491afecac0dbcb94e975838ee7ed61c528",
+      "size": 1931,
+      "normalized_sha256": "a2d90939e1edfb720158cb150a3d12491afecac0dbcb94e975838ee7ed61c528"
+    },
+    "gradle.properties": {
+      "role": "index",
+      "sha256": "26c0f34a34b0e84bf84b0517d4fb4132b1ef9634b00d9761bd862dde4b78b609",
+      "size": 117,
+      "normalized_sha256": "26c0f34a34b0e84bf84b0517d4fb4132b1ef9634b00d9761bd862dde4b78b609"
+    },
+    "gradle/libs.versions.toml": {
+      "role": "index",
+      "sha256": "d9d605fc724c2ea8e82a580a56ff9e47f50a28e069d59db8f49ee91b5062e04d",
+      "size": 349,
+      "normalized_sha256": "d9d605fc724c2ea8e82a580a56ff9e47f50a28e069d59db8f49ee91b5062e04d"
+    },
+    "gradle/native-toolchain.properties": {
+      "role": "index",
+      "sha256": "ca6881c69ac4b9eefa1654e378ac43f080d73e0ed853efcfc965c28b0a71ec9d",
+      "size": 88,
+      "normalized_sha256": "ca6881c69ac4b9eefa1654e378ac43f080d73e0ed853efcfc965c28b0a71ec9d"
+    },
+    "gradle/wrapper/gradle-wrapper.jar": {
+      "role": "index",
+      "sha256": "e996d452d2645e70c01c11143ca2d3742734a28da2bf61f25c82bdc288c9e637",
+      "size": 59203
+    },
+    "gradle/wrapper/gradle-wrapper.properties": {
+      "role": "index",
+      "sha256": "c0bd58c32fd21775c8c078f5030d474839075a0681ada676f13010a0fa0418f3",
+      "size": 301,
+      "normalized_sha256": "c0bd58c32fd21775c8c078f5030d474839075a0681ada676f13010a0fa0418f3"
+    },
+    "gradlew": {
+      "role": "index",
+      "sha256": "63135287117a1e6d12c84580f1f49c61d1ba02218ecd28660605e97f976e7d65",
+      "size": 5766,
+      "normalized_sha256": "63135287117a1e6d12c84580f1f49c61d1ba02218ecd28660605e97f976e7d65"
+    },
+    "gradlew.bat": {
+      "role": "index",
+      "sha256": "c46a27c79007746de5922b17abb6230d64ad8b1ba3ad1585ee5c6543c2a9b129",
+      "size": 2674,
+      "normalized_sha256": "c46a27c79007746de5922b17abb6230d64ad8b1ba3ad1585ee5c6543c2a9b129"
+    },
+    "iosApp/KmpWechatBridge.swift": {
+      "role": "index",
+      "sha256": "4eec083a30e06c5d19eeec71a7d3fd5fef1bc7a5c8c14db1592ca08e143c5878",
+      "size": 2784,
+      "normalized_sha256": "4eec083a30e06c5d19eeec71a7d3fd5fef1bc7a5c8c14db1592ca08e143c5878"
+    },
+    "iosApp/Sources/GycWechatKuikly/WechatModule.swift": {
+      "role": "index",
+      "sha256": "c2708e2e26da463b570371db69c2c41dc1b7ddc0804de665f464dae7d0d37e7d",
+      "size": 14750,
+      "normalized_sha256": "c2708e2e26da463b570371db69c2c41dc1b7ddc0804de665f464dae7d0d37e7d"
+    },
+    "iosApp/Sources/GycWechatNative/WechatClient.swift": {
+      "role": "index",
+      "sha256": "4a1309cb4e7102b37ebffa267e4ae61b54952ff34cb746464e3b21ca27111c99",
+      "size": 18776,
+      "normalized_sha256": "4a1309cb4e7102b37ebffa267e4ae61b54952ff34cb746464e3b21ca27111c99"
+    },
+    "iosApp/Sources/GycWechatNative/WechatSession.swift": {
+      "role": "index",
+      "sha256": "f02959659c0918fcb8e7d8e95d670e93ab6aada16acfe7e7ecc78130e8f404cf",
+      "size": 6737,
+      "normalized_sha256": "f02959659c0918fcb8e7d8e95d670e93ab6aada16acfe7e7ecc78130e8f404cf"
+    },
+    "jitpack-install.sh": {
+      "role": "index",
+      "sha256": "68d6af4d63edfb1e01eb61f49ed2ed4bb094978875a29238d29bf3ad1cc80315",
+      "size": 4709,
+      "normalized_sha256": "68d6af4d63edfb1e01eb61f49ed2ed4bb094978875a29238d29bf3ad1cc80315"
+    },
+    "jitpack.yml": {
+      "role": "index",
+      "sha256": "79a5c41da2ca145e4ed736210b57cb63e8831dfa70b936f338d8e8f28168b184",
+      "size": 63,
+      "normalized_sha256": "79a5c41da2ca145e4ed736210b57cb63e8831dfa70b936f338d8e8f28168b184"
+    },
+    "ohos/AppScope/app.json5": {
+      "role": "index",
+      "sha256": "89ac3e656fe393fac4cb42781cab16447703f64bd9d72838a2614f6a503744bc",
+      "size": 212,
+      "normalized_sha256": "89ac3e656fe393fac4cb42781cab16447703f64bd9d72838a2614f6a503744bc"
+    },
+    "ohos/build-profile.json5": {
+      "role": "index",
+      "sha256": "17fdcb4b8916a511fe388e24ea3bab0b958da976fc6cb1f83e3c693b987cf77d",
+      "size": 338,
+      "normalized_sha256": "17fdcb4b8916a511fe388e24ea3bab0b958da976fc6cb1f83e3c693b987cf77d"
+    },
+    "ohos/hvigor/hvigor-config.json5": {
+      "role": "index",
+      "sha256": "01a4a20bc34adffe85e2328cc2314c1128e5f2da4d276dd3e08b2d75100b16c1",
+      "size": 108,
+      "normalized_sha256": "01a4a20bc34adffe85e2328cc2314c1128e5f2da4d276dd3e08b2d75100b16c1"
+    },
+    "ohos/hvigorfile.ts": {
+      "role": "index",
+      "sha256": "284df6f71686f395e87b74419fbe0c34529a647809513fa7944cbcba01908854",
+      "size": 103,
+      "normalized_sha256": "284df6f71686f395e87b74419fbe0c34529a647809513fa7944cbcba01908854"
+    },
+    "ohos/oh-package.json5": {
+      "role": "index",
+      "sha256": "a0f3c9d231fc539c06596b45ef3b2889a775278455f50c90820e9ba01716e5d1",
+      "size": 101,
+      "normalized_sha256": "a0f3c9d231fc539c06596b45ef3b2889a775278455f50c90820e9ba01716e5d1"
+    },
+    "ohos/wechat-native/CHANGELOG.md": {
+      "role": "index",
+      "sha256": "985de45749406f79c35fb6dbbd5968ba2c543957861181b520559b4dab0f9224",
+      "size": 3639,
+      "normalized_sha256": "985de45749406f79c35fb6dbbd5968ba2c543957861181b520559b4dab0f9224"
+    },
+    "ohos/wechat-native/Index.ets": {
+      "role": "index",
+      "sha256": "bcbad424ffce6b87c2e20f5e6b19e03e40d7348dc5dc2aab23dfa4f8725f47dd",
+      "size": 285,
+      "normalized_sha256": "bcbad424ffce6b87c2e20f5e6b19e03e40d7348dc5dc2aab23dfa4f8725f47dd"
+    },
+    "ohos/wechat-native/LICENSE": {
+      "role": "index",
+      "sha256": "c69e86da3fc2081768d5839c99bf63ee397a308f78e6f61cd2babc530a36f9cc",
+      "size": 11356,
+      "normalized_sha256": "c69e86da3fc2081768d5839c99bf63ee397a308f78e6f61cd2babc530a36f9cc"
+    },
+    "ohos/wechat-native/README.md": {
+      "role": "index",
+      "sha256": "cb457f243f9925f4f3f375ea048c9a5c639986f0bda45db94400bb19b2ab6812",
+      "size": 2559,
+      "normalized_sha256": "cb457f243f9925f4f3f375ea048c9a5c639986f0bda45db94400bb19b2ab6812"
+    },
+    "ohos/wechat-native/build-profile.json5": {
+      "role": "index",
+      "sha256": "3e0d7b0aab87ea90dd16bede7e0a093d3d781b475c52e6233012eddb078be63e",
+      "size": 93,
+      "normalized_sha256": "3e0d7b0aab87ea90dd16bede7e0a093d3d781b475c52e6233012eddb078be63e"
+    },
+    "ohos/wechat-native/hvigorfile.ts": {
+      "role": "index",
+      "sha256": "8c004b8b98616fc371de71759be919b5f94a2c778da75e6501902b9af6d22d40",
+      "size": 103,
+      "normalized_sha256": "8c004b8b98616fc371de71759be919b5f94a2c778da75e6501902b9af6d22d40"
+    },
+    "ohos/wechat-native/oh-package.json5": {
+      "role": "index",
+      "sha256": "ac4709c7d249b7576e2ecf904418145a9e95931e7dc563cfd3569b56f9ea6881",
+      "size": 445,
+      "normalized_sha256": "ac4709c7d249b7576e2ecf904418145a9e95931e7dc563cfd3569b56f9ea6881"
+    },
+    "ohos/wechat-native/src/main/ets/WechatClient.ets": {
+      "role": "index",
+      "sha256": "4c12e0ca8b53102982cb32f57e226bac2cb913e7c2184bba52604a76d22aa705",
+      "size": 21716,
+      "normalized_sha256": "4c12e0ca8b53102982cb32f57e226bac2cb913e7c2184bba52604a76d22aa705"
+    },
+    "ohos/wechat-native/src/main/ets/WechatModule.ets": {
+      "role": "index",
+      "sha256": "468aa55584b3e03203b243295b247c87ca697c81dd27986c7e9352525d3401fc",
+      "size": 7321,
+      "normalized_sha256": "468aa55584b3e03203b243295b247c87ca697c81dd27986c7e9352525d3401fc"
+    },
+    "ohos/wechat-native/src/main/ets/WechatPreferencesRequestStore.ets": {
+      "role": "index",
+      "sha256": "0e76c258742cfae1f6a87b235d2a49266a077ef6229177be5bc270be6e94e40e",
+      "size": 1802,
+      "normalized_sha256": "0e76c258742cfae1f6a87b235d2a49266a077ef6229177be5bc270be6e94e40e"
+    },
+    "ohos/wechat-native/src/main/module.json5": {
+      "role": "index",
+      "sha256": "e32403c59944a275744892315a37ccd4a9968a835e0ce630605ac4954d934673",
+      "size": 110,
+      "normalized_sha256": "e32403c59944a275744892315a37ccd4a9968a835e0ce630605ac4954d934673"
+    },
+    "release-pack.py": {
+      "role": "index",
+      "sha256": "d2f835f11315be3c5698c148e901b1f3699f9a7be0d88a0a3c3d56154f29db8b",
+      "size": 877,
+      "normalized_sha256": "d2f835f11315be3c5698c148e901b1f3699f9a7be0d88a0a3c3d56154f29db8b"
+    },
+    "scripts/build.sh": {
+      "role": "index",
+      "sha256": "cacfbe36ce6580346629f1a507d403e70a520b8490f1c20d82380bee2470e74d",
+      "size": 2310,
+      "normalized_sha256": "cacfbe36ce6580346629f1a507d403e70a520b8490f1c20d82380bee2470e74d"
+    },
+    "scripts/check-har.py": {
+      "role": "index",
+      "sha256": "cded1d35484dc7150352ff2785e22486e4cf2843ef646eba83daee095f5b4167",
+      "size": 1551,
+      "normalized_sha256": "cded1d35484dc7150352ff2785e22486e4cf2843ef646eba83daee095f5b4167"
+    },
+    "scripts/check-maven.py": {
+      "role": "index",
+      "sha256": "b14800c5a8ee8c2c760e092cda967286eb33ed7a5cb88e4b8ed15229748de908",
+      "size": 8996,
+      "normalized_sha256": "b14800c5a8ee8c2c760e092cda967286eb33ed7a5cb88e4b8ed15229748de908"
+    },
+    "scripts/check-public-maven.py": {
+      "role": "index",
+      "sha256": "1f38e825e4dd966a4faa18d7315d6536841b03145b3fc0ace366bcde1817b203",
+      "size": 17590,
+      "normalized_sha256": "1f38e825e4dd966a4faa18d7315d6536841b03145b3fc0ace366bcde1817b203"
+    },
+    "scripts/ci-build-kuikly-render.sh": {
+      "role": "index",
+      "sha256": "efb688708fc754f2d0b32272eff8994dd77b6e6b6020c68ca02f2420c5cfa8d3",
+      "size": 2850,
+      "normalized_sha256": "efb688708fc754f2d0b32272eff8994dd77b6e6b6020c68ca02f2420c5cfa8d3"
+    },
+    "scripts/ci-java.security": {
+      "role": "index",
+      "sha256": "6631b3af3c659c844c8ba0275c6aa066dcc545354c93df2776575e1ce065788a",
+      "size": 65,
+      "normalized_sha256": "6631b3af3c659c844c8ba0275c6aa066dcc545354c93df2776575e1ce065788a"
+    },
+    "scripts/ci-repositories.gradle": {
+      "role": "index",
+      "sha256": "810fdda8189e68cf7904783003ba6609c840b6a43485ac47e13d49cdb0749c95",
+      "size": 1014,
+      "normalized_sha256": "810fdda8189e68cf7904783003ba6609c840b6a43485ac47e13d49cdb0749c95"
+    },
+    "scripts/jitpack-metadata.py": {
+      "role": "index",
+      "sha256": "9d6becda7241ba10df34fe335e17fb93904be772868cc9ad4ffae4a8bc74a448",
+      "size": 2999,
+      "normalized_sha256": "9d6becda7241ba10df34fe335e17fb93904be772868cc9ad4ffae4a8bc74a448"
+    },
+    "scripts/package-har.sh": {
+      "role": "index",
+      "sha256": "cdaa2501d510f4e1c2a6853b2439b47731fa942031d5bcc94bfbb7334c82e5a2",
+      "size": 1356,
+      "normalized_sha256": "cdaa2501d510f4e1c2a6853b2439b47731fa942031d5bcc94bfbb7334c82e5a2"
+    },
+    "scripts/package-maven.sh": {
+      "role": "index",
+      "sha256": "4ef57610a46dfff796dc2f37aef6971661b67b30ed4ea2fc71302a70927dc02d",
+      "size": 1080,
+      "normalized_sha256": "4ef57610a46dfff796dc2f37aef6971661b67b30ed4ea2fc71302a70927dc02d"
+    },
+    "scripts/test-check-maven.py": {
+      "role": "index",
+      "sha256": "36d7841bcfba09f5173d870e84b71379b3d870b948985f2ed02456ea42daf022",
+      "size": 5645,
+      "normalized_sha256": "36d7841bcfba09f5173d870e84b71379b3d870b948985f2ed02456ea42daf022"
+    },
+    "scripts/test-jitpack-metadata.py": {
+      "role": "index",
+      "sha256": "df6c16d02e20347358e924ca63dd96c26a973c7f71ddaa8b1a97c0a2cce596eb",
+      "size": 4276,
+      "normalized_sha256": "df6c16d02e20347358e924ca63dd96c26a973c7f71ddaa8b1a97c0a2cce596eb"
+    },
+    "scripts/verify-release.sh": {
+      "role": "index",
+      "sha256": "866a5437114d7f4715d151283caec9b3a280060effbe57aab01d3ab255c70da9",
+      "size": 1467,
+      "normalized_sha256": "866a5437114d7f4715d151283caec9b3a280060effbe57aab01d3ab255c70da9"
+    },
+    "settings.gradle.kts": {
+      "role": "index",
+      "sha256": "812d0e0a2778728c5e4bcf68e69fe6702587ba7e6ba845a49dfb9a2d35a5fe14",
+      "size": 1170,
+      "normalized_sha256": "812d0e0a2778728c5e4bcf68e69fe6702587ba7e6ba845a49dfb9a2d35a5fe14"
+    },
+    "tests/AndroidSdkCheck.java": {
+      "role": "index",
+      "sha256": "f825c45d93bc8aa81d82653570824b39f39ac3558b5e6c277b68c130c6af99dd",
+      "size": 1714,
+      "normalized_sha256": "f825c45d93bc8aa81d82653570824b39f39ac3558b5e6c277b68c130c6af99dd"
+    },
+    "tests/preferences-store.cjs": {
+      "role": "index",
+      "sha256": "02bf964054958dcb8764f5bd644879cf265b9713d649979ded346c50c204d19c",
+      "size": 2867,
+      "normalized_sha256": "02bf964054958dcb8764f5bd644879cf265b9713d649979ded346c50c204d19c"
+    },
+    "tests/swift-callback.py": {
+      "role": "index",
+      "sha256": "da19a42331e992fa43246e53ce840ad708a0e2ea408d3a1ccf6cdd8d7d3a102a",
+      "size": 1741,
+      "normalized_sha256": "da19a42331e992fa43246e53ce840ad708a0e2ea408d3a1ccf6cdd8d7d3a102a"
+    },
+    "tests/swift-callback/main.swift": {
+      "role": "index",
+      "sha256": "a81fef73661b4df9bca5e7466899f8e37ed91d298629eec4847aacc33eed37fe",
+      "size": 24186,
+      "normalized_sha256": "a81fef73661b4df9bca5e7466899f8e37ed91d298629eec4847aacc33eed37fe"
+    },
+    "tests/swift-receipt.py": {
+      "role": "index",
+      "sha256": "065646cd4408104e9c5acad619a1b64aca51453fed491b80ebe777b7cf3ea85b",
+      "size": 12652,
+      "normalized_sha256": "065646cd4408104e9c5acad619a1b64aca51453fed491b80ebe777b7cf3ea85b"
+    },
+    "tests/test_jitpack_install.py": {
+      "role": "index",
+      "sha256": "d0a6e5b80361f88892894bb8591df72b4d506aab960928a4333f3f29806bc473",
+      "size": 4714,
+      "normalized_sha256": "d0a6e5b80361f88892894bb8591df72b4d506aab960928a4333f3f29806bc473"
+    },
+    "tests/wechat.cjs": {
+      "role": "index",
+      "sha256": "66894191482575cb8c97e69da5fca5156b5f53c7e06fd2d78799d456a159d5c1",
+      "size": 59888,
+      "normalized_sha256": "66894191482575cb8c97e69da5fca5156b5f53c7e06fd2d78799d456a159d5c1"
+    },
+    "verification/ci/test_cache_contract.py": {
+      "role": "index",
+      "sha256": "0a2240e39d87b52386a47fe69ceaea0a61d13a45b52ed8fd067679c05b585f3a",
+      "size": 678,
+      "normalized_sha256": "0a2240e39d87b52386a47fe69ceaea0a61d13a45b52ed8fd067679c05b585f3a"
+    },
+    "verification/ci/test_release_native_version.py": {
+      "role": "index",
+      "sha256": "6e0e264c66d5ceca446012581f03de2f4f68a85e924a5a4e49febd00eacf4446",
+      "size": 4840,
+      "normalized_sha256": "6e0e264c66d5ceca446012581f03de2f4f68a85e924a5a4e49febd00eacf4446"
+    },
+    "verification/gradle/build.gradle.kts": {
+      "role": "index",
+      "sha256": "23d0a76c75d2bf70262a5c49d7e4eeca8818704de4a6e12f7b8e50fcead45859",
+      "size": 1522,
+      "normalized_sha256": "23d0a76c75d2bf70262a5c49d7e4eeca8818704de4a6e12f7b8e50fcead45859"
+    },
+    "verification/gradle/gradle.properties": {
+      "role": "index",
+      "sha256": "b07a3476698b167ad5e6ac0c5cee5e6d7db5dd53e680b6dbf40f89b00fc42a2c",
+      "size": 76,
+      "normalized_sha256": "b07a3476698b167ad5e6ac0c5cee5e6d7db5dd53e680b6dbf40f89b00fc42a2c"
+    },
+    "verification/gradle/settings.gradle.kts": {
+      "role": "index",
+      "sha256": "366ee5f72369e78bddb7978c0eb11fa8e308c20dfce90a947347c50267754a31",
+      "size": 1057,
+      "normalized_sha256": "366ee5f72369e78bddb7978c0eb11fa8e308c20dfce90a947347c50267754a31"
+    },
+    "verification/gradle/src/androidMain/kotlin/AndroidProbe.kt": {
+      "role": "index",
+      "sha256": "f4f493f751f21bef6b01d066bf8d4acd1db5c10a2061a4ccdfc7f2cc9c5774ba",
+      "size": 465,
+      "normalized_sha256": "f4f493f751f21bef6b01d066bf8d4acd1db5c10a2061a4ccdfc7f2cc9c5774ba"
+    },
+    "verification/gradle/src/commonMain/kotlin/Probe.kt": {
+      "role": "index",
+      "sha256": "199784f2a2a921717ccfb519568a2650e6eeb154943579887297bbc02ea9ab14",
+      "size": 1060,
+      "normalized_sha256": "199784f2a2a921717ccfb519568a2650e6eeb154943579887297bbc02ea9ab14"
+    },
+    "verification/gradle/src/iosMain/kotlin/IosProbe.kt": {
+      "role": "index",
+      "sha256": "8dac81a837abccb129d3ee71393a1f850744130dc935b110b894250586dddb33",
+      "size": 115,
+      "normalized_sha256": "8dac81a837abccb129d3ee71393a1f850744130dc935b110b894250586dddb33"
+    },
+    "verification/gradle/src/ohosArm64Main/kotlin/OhosProbe.kt": {
+      "role": "index",
+      "sha256": "135456ffcbdff983b32d8a1eaeca8cb2fb12352ed3509f290bf72ef2fced7cfe",
+      "size": 299,
+      "normalized_sha256": "135456ffcbdff983b32d8a1eaeca8cb2fb12352ed3509f290bf72ef2fced7cfe"
+    },
+    "verification/gradle/src/receiverAndroid/kotlin/ReceiverProbe.kt": {
+      "role": "index",
+      "sha256": "f359e5f297a216eb11baebf333015f05f545312f197ef1605f64c515edd5976a",
+      "size": 266,
+      "normalized_sha256": "f359e5f297a216eb11baebf333015f05f545312f197ef1605f64c515edd5976a"
+    },
+    "verification/gradle/src/receiverCommon/kotlin/KuiklyProbe.kt": {
+      "role": "index",
+      "sha256": "7e55864e0cb1aa2c72a8bba8947c8129d49b1f18a73f6aa886d0c38b10e44706",
+      "size": 906,
+      "normalized_sha256": "7e55864e0cb1aa2c72a8bba8947c8129d49b1f18a73f6aa886d0c38b10e44706"
+    },
+    "verification/ohos/AppScope/app.json5": {
+      "role": "index",
+      "sha256": "88a18bb0392a4e5c51b8b44af065db53fa081c873033354d3c2e20892237b1ca",
+      "size": 213,
+      "normalized_sha256": "88a18bb0392a4e5c51b8b44af065db53fa081c873033354d3c2e20892237b1ca"
+    },
+    "verification/ohos/build-profile.json5": {
+      "role": "index",
+      "sha256": "91aa41ee347f7b45a87aa82f07fda41dab8981928323ee85ac69e6388cf88e4a",
+      "size": 329,
+      "normalized_sha256": "91aa41ee347f7b45a87aa82f07fda41dab8981928323ee85ac69e6388cf88e4a"
+    },
+    "verification/ohos/consumer/Index.ets": {
+      "role": "index",
+      "sha256": "f6d453ded3c78ab92df4630970ec2d18fec92165ad209b23ebecbc5c0c4f13cb",
+      "size": 614,
+      "normalized_sha256": "f6d453ded3c78ab92df4630970ec2d18fec92165ad209b23ebecbc5c0c4f13cb"
+    },
+    "verification/ohos/consumer/build-profile.json5": {
+      "role": "index",
+      "sha256": "3e0d7b0aab87ea90dd16bede7e0a093d3d781b475c52e6233012eddb078be63e",
+      "size": 93,
+      "normalized_sha256": "3e0d7b0aab87ea90dd16bede7e0a093d3d781b475c52e6233012eddb078be63e"
+    },
+    "verification/ohos/consumer/hvigorfile.ts": {
+      "role": "index",
+      "sha256": "8c004b8b98616fc371de71759be919b5f94a2c778da75e6501902b9af6d22d40",
+      "size": 103,
+      "normalized_sha256": "8c004b8b98616fc371de71759be919b5f94a2c778da75e6501902b9af6d22d40"
+    },
+    "verification/ohos/consumer/oh-package.json5": {
+      "role": "index",
+      "sha256": "89c9908d9a1ed25881f3a7692f4f7a706327ff6a3f59663de16bd65aff7b1246",
+      "size": 117,
+      "normalized_sha256": "89c9908d9a1ed25881f3a7692f4f7a706327ff6a3f59663de16bd65aff7b1246"
+    },
+    "verification/ohos/consumer/src/main/module.json5": {
+      "role": "index",
+      "sha256": "ae75f1aa706172174d0fed4c7d8de8985275c0840c315f7493bfd21d378dd0d8",
+      "size": 106,
+      "normalized_sha256": "ae75f1aa706172174d0fed4c7d8de8985275c0840c315f7493bfd21d378dd0d8"
+    },
+    "verification/ohos/hvigor/hvigor-config.json5": {
+      "role": "index",
+      "sha256": "01a4a20bc34adffe85e2328cc2314c1128e5f2da4d276dd3e08b2d75100b16c1",
+      "size": 108,
+      "normalized_sha256": "01a4a20bc34adffe85e2328cc2314c1128e5f2da4d276dd3e08b2d75100b16c1"
+    },
+    "verification/ohos/hvigorfile.ts": {
+      "role": "index",
+      "sha256": "284df6f71686f395e87b74419fbe0c34529a647809513fa7944cbcba01908854",
+      "size": 103,
+      "normalized_sha256": "284df6f71686f395e87b74419fbe0c34529a647809513fa7944cbcba01908854"
+    },
+    "verification/ohos/oh-package.json5": {
+      "role": "index",
+      "sha256": "a0f3c9d231fc539c06596b45ef3b2889a775278455f50c90820e9ba01716e5d1",
+      "size": 101,
+      "normalized_sha256": "a0f3c9d231fc539c06596b45ef3b2889a775278455f50c90820e9ba01716e5d1"
+    },
+    "verification/swift-consumer/Package.swift": {
+      "role": "index",
+      "sha256": "d98a5aa223b9a770dc7af531c5a5a723a1a422ff38447618efc30d2421305b7f",
+      "size": 708,
+      "normalized_sha256": "d98a5aa223b9a770dc7af531c5a5a723a1a422ff38447618efc30d2421305b7f"
+    },
+    "verification/swift-consumer/Sources/WechatConsumer/Probe.swift": {
+      "role": "index",
+      "sha256": "9acb38d32b52f8559ac0cb9deca7c8115f38da6e9b072bf7cb65e34676135fb5",
+      "size": 918,
+      "normalized_sha256": "9acb38d32b52f8559ac0cb9deca7c8115f38da6e9b072bf7cb65e34676135fb5"
+    },
+    "verification/swift-kuikly/MocksNative.swift": {
+      "role": "index",
+      "sha256": "863302ce2836956557ce50262fa7c5b1f000a4765d3947942c64e850a2c96846",
+      "size": 4717,
+      "normalized_sha256": "863302ce2836956557ce50262fa7c5b1f000a4765d3947942c64e850a2c96846"
+    },
+    "verification/swift-kuikly/MocksRender.swift": {
+      "role": "index",
+      "sha256": "a65e284164e879ea53ba2a4ddf97b0c6630ddcffb2cc417f301abf2977067905",
+      "size": 812,
+      "normalized_sha256": "a65e284164e879ea53ba2a4ddf97b0c6630ddcffb2cc417f301abf2977067905"
+    },
+    "verification/swift-kuikly/MocksUIKit.swift": {
+      "role": "index",
+      "sha256": "03c0bf73c375fa7cf6c07053db360d938ac6ca5c14b432653f8a470630e49f6d",
+      "size": 345,
+      "normalized_sha256": "03c0bf73c375fa7cf6c07053db360d938ac6ca5c14b432653f8a470630e49f6d"
+    },
+    "verification/swift-kuikly/PublicAPI.swift": {
+      "role": "index",
+      "sha256": "d6a61b4b74f57ea4a4507032aff5aef1dafcbdf471abd338175880a92abde309",
+      "size": 497,
+      "normalized_sha256": "d6a61b4b74f57ea4a4507032aff5aef1dafcbdf471abd338175880a92abde309"
+    },
+    "verification/swift-kuikly/main.swift": {
+      "role": "index",
+      "sha256": "7e2db7806bcfa7bb1d405a4e1642177daa85390e1d46fcc449290e77f12acbaa",
+      "size": 22124,
+      "normalized_sha256": "7e2db7806bcfa7bb1d405a4e1642177daa85390e1d46fcc449290e77f12acbaa"
+    },
+    "verification/swift-kuikly/verify-public-api.py": {
+      "role": "index",
+      "sha256": "ed0edd973483f7ddaaaa0ce963100e6717843838cbc956f6264c0927b8ed5fe7",
+      "size": 713,
+      "normalized_sha256": "ed0edd973483f7ddaaaa0ce963100e6717843838cbc956f6264c0927b8ed5fe7"
+    },
+    "verification/swift-kuikly/verify.py": {
+      "role": "index",
+      "sha256": "62d1e911067a787c2a083da49073c3447a9e794da6a1a54c98dcb8f4aa81f60a",
+      "size": 1209,
+      "normalized_sha256": "62d1e911067a787c2a083da49073c3447a9e794da6a1a54c98dcb8f4aa81f60a"
+    },
+    "verification/swift/main.swift": {
+      "role": "index",
+      "sha256": "b0afb8667ad60dd42d5932a766c4479a0a0c1d1e7758ba67d0895508c33d5d53",
+      "size": 6142,
+      "normalized_sha256": "b0afb8667ad60dd42d5932a766c4479a0a0c1d1e7758ba67d0895508c33d5d53"
+    },
+    "wechat-core/build.gradle.kts": {
+      "role": "index",
+      "sha256": "8fcb7f80aa7840f2692541cf5660310246209e9943dcd67e70935ccf1a91811b",
+      "size": 1571,
+      "normalized_sha256": "8fcb7f80aa7840f2692541cf5660310246209e9943dcd67e70935ccf1a91811b"
+    },
+    "wechat-core/src/androidMain/AndroidManifest.xml": {
+      "role": "index",
+      "sha256": "d0016bd96cf957ed2a927487f26b1cad96ae168a227f86db5a45d194e83e9a52",
+      "size": 147,
+      "normalized_sha256": "d0016bd96cf957ed2a927487f26b1cad96ae168a227f86db5a45d194e83e9a52"
+    },
+    "wechat-core/src/androidMain/kotlin/io/github/gycrosskit/wechat/AndroidWechatClient.kt": {
+      "role": "index",
+      "sha256": "1b92cfc3c2893ca1e56e7c3b24478f1d7046bc77882837c10efdec7d9dd940e1",
+      "size": 18418,
+      "normalized_sha256": "1b92cfc3c2893ca1e56e7c3b24478f1d7046bc77882837c10efdec7d9dd940e1"
+    },
+    "wechat-core/src/androidUnitTest/kotlin/io/github/gycrosskit/wechat/AndroidWechatClientTest.kt": {
+      "role": "index",
+      "sha256": "f43db04c02e2ff4abb46025cf4ea1c47881827e42a167b6ab7b60bc6c0d9f672",
+      "size": 33653,
+      "normalized_sha256": "f43db04c02e2ff4abb46025cf4ea1c47881827e42a167b6ab7b60bc6c0d9f672"
+    },
+    "wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatClient.kt": {
+      "role": "index",
+      "sha256": "febd0244d6182ef80a36dc13951d222eed6b1d4907f224ed3bdfaf38e9a627a9",
+      "size": 7179,
+      "normalized_sha256": "febd0244d6182ef80a36dc13951d222eed6b1d4907f224ed3bdfaf38e9a627a9"
+    },
+    "wechat-core/src/commonMain/kotlin/io/github/gycrosskit/wechat/WechatSession.kt": {
+      "role": "index",
+      "sha256": "41ad04529f22479c705651a9f2e409986f55496e10b80f4b2cd17c63886cff16",
+      "size": 3378,
+      "normalized_sha256": "41ad04529f22479c705651a9f2e409986f55496e10b80f4b2cd17c63886cff16"
+    },
+    "wechat-core/src/commonTest/kotlin/io/github/gycrosskit/wechat/WechatSessionTest.kt": {
+      "role": "index",
+      "sha256": "9e2d5da51ab09be250e016c0cd15d0255d33e96680405e3cac248be5275593ee",
+      "size": 14953,
+      "normalized_sha256": "9e2d5da51ab09be250e016c0cd15d0255d33e96680405e3cac248be5275593ee"
+    },
+    "wechat-core/src/iosMain/kotlin/io/github/gycrosskit/wechat/IosWechatClient.kt": {
+      "role": "index",
+      "sha256": "af4a884f5f9874c6e657d11661659f585dc2552e22b5d6fbfa231aac42e0798d",
+      "size": 430,
+      "normalized_sha256": "af4a884f5f9874c6e657d11661659f585dc2552e22b5d6fbfa231aac42e0798d"
+    },
+    "wechat-core/src/jvmMain/kotlin/io/github/gycrosskit/wechat/WechatCapabilities.kt": {
+      "role": "index",
+      "sha256": "6a9b238ff18bbf235b8295be4e370e54efa71ac5bfb6b01860f2d3bb94587bb1",
+      "size": 170,
+      "normalized_sha256": "6a9b238ff18bbf235b8295be4e370e54efa71ac5bfb6b01860f2d3bb94587bb1"
+    },
+    "wechat-core/src/jvmTest/kotlin/com/tencent/kuikly/core/module/Module.kt": {
+      "role": "index",
+      "sha256": "95a17a9769ad270466f828f5108e5d549a435a41402ffe4d402c0ccf7371a596",
+      "size": 1348,
+      "normalized_sha256": "95a17a9769ad270466f828f5108e5d549a435a41402ffe4d402c0ccf7371a596"
+    },
+    "wechat-core/src/jvmTest/kotlin/com/tencent/kuikly/core/nvi/serialization/json/JSONObject.kt": {
+      "role": "index",
+      "sha256": "5c73ccf27384ad7dc64ee80db0c55217ddc942b421295e0f5dd3793c46f7bfee",
+      "size": 455,
+      "normalized_sha256": "5c73ccf27384ad7dc64ee80db0c55217ddc942b421295e0f5dd3793c46f7bfee"
+    },
+    "wechat-core/src/jvmTest/kotlin/io/github/gycrosskit/wechat/kuikly/WechatModuleCancelTest.kt": {
+      "role": "index",
+      "sha256": "6b3eb839ba5cf8df121089cb0e9b7e000343db2f3dfd7aef7134c6bbfef22198",
+      "size": 8473,
+      "normalized_sha256": "6b3eb839ba5cf8df121089cb0e9b7e000343db2f3dfd7aef7134c6bbfef22198"
+    },
+    "wechat-core/src/ohosArm64Main/kotlin/io/github/gycrosskit/wechat/WechatCapabilities.kt": {
+      "role": "index",
+      "sha256": "999a0381e56ccddfb5c35cb440fbe0125059dc781a7f8de53bd4f25fea1a98ae",
+      "size": 105,
+      "normalized_sha256": "999a0381e56ccddfb5c35cb440fbe0125059dc781a7f8de53bd4f25fea1a98ae"
+    },
+    "wechat-kuikly/build.gradle.kts": {
+      "role": "index",
+      "sha256": "4e2de0555aba031585b5c235f30f001832c38ace78308b218e6474c6fd0f21a1",
+      "size": 966,
+      "normalized_sha256": "4e2de0555aba031585b5c235f30f001832c38ace78308b218e6474c6fd0f21a1"
+    },
+    "wechat-kuikly/src/androidMain/kotlin/io/github/gycrosskit/wechat/kuikly/AndroidWechatModule.kt": {
+      "role": "index",
+      "sha256": "3466553b39bef4dcc51ba6706737cfb812967ff314be92b2c2f9993a59ae5ea9",
+      "size": 7254,
+      "normalized_sha256": "3466553b39bef4dcc51ba6706737cfb812967ff314be92b2c2f9993a59ae5ea9"
+    },
+    "wechat-kuikly/src/commonMain/kotlin/io/github/gycrosskit/wechat/kuikly/WechatModule.kt": {
+      "role": "index",
+      "sha256": "d069668137096d77dde75bd057f285c327f4528bca109753a5211a08d7e979d6",
+      "size": 12255,
+      "normalized_sha256": "d069668137096d77dde75bd057f285c327f4528bca109753a5211a08d7e979d6"
+    }
+  },
+  "managed_scope": {
+    "version": "managed-scope-baseline/v1",
+    "policy_identity": "8d28b84e19128a94f32639591473fb957e1442a990d09030895878dc6bab66ca",
+    "observe_change_policy": "review_required",
+    "budget_policy_identity": "15e9b37a6c57e9bf03c9df3d0d049eb5b9a7f5540f9d34960408114e2538a32d",
+    "budget_policy": {
+      "version": "cognition-budget-policy/v1",
+      "mode": "enforce",
+      "whole_index": {
+        "target_tokens": 200000,
+        "warning_tokens": 300000,
+        "max_tokens": 400000
+      },
+      "r": [
+        {
+          "min_c": 1,
+          "max_c": 4,
+          "target_tokens": 25,
+          "max_tokens": 50
+        },
+        {
+          "min_c": 5,
+          "max_c": 7,
+          "target_tokens": 45,
+          "max_tokens": 90
+        },
+        {
+          "min_c": 8,
+          "max_c": 8,
+          "target_tokens": 70,
+          "max_tokens": 140
+        },
+        {
+          "min_c": 9,
+          "max_c": 9,
+          "target_tokens": 90,
+          "max_tokens": 180
+        }
+      ],
+      "s": [
+        {
+          "min_c": 1,
+          "max_c": 4,
+          "target_tokens": 20,
+          "max_tokens": 40
+        },
+        {
+          "min_c": 5,
+          "max_c": 7,
+          "target_tokens": 40,
+          "max_tokens": 80
+        },
+        {
+          "min_c": 8,
+          "max_c": 8,
+          "target_tokens": 70,
+          "max_tokens": 140
+        },
+        {
+          "min_c": 9,
+          "max_c": 9,
+          "target_tokens": 100,
+          "max_tokens": 200
+        }
+      ]
+    },
+    "apply_authorization_mode": "auto"
+  }
+}
